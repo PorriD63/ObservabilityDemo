@@ -1,0 +1,27 @@
+{
+  "name": "nodejs-seq-demo",
+  "version": "1.0.0",
+  "description": "Node.js Seq logging demo with workflow tracking",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [
+    "seq",
+    "logging",
+    "winston",
+    "workflow",
+    "gaming-platform"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "winston": "^3.11.0",
+    "@datalust/winston-seq": "^2.0.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
