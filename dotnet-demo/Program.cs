@@ -1,17 +1,28 @@
 using Serilog;
 using Serilog.Context;
 
+// 定義微服務名稱
+const string SERVICE_PLAYER = "PlayerService";
+const string SERVICE_GAME = "GameService";
+const string SERVICE_WALLET = "WalletService";
+const string SERVICE_PAYMENT = "PaymentService";
+const string SERVICE_RISK = "RiskService";
+const string SERVICE_NOTIFICATION = "NotificationService";
+
 // 配置 Serilog
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .Enrich.WithProperty("Application", "DotnetSeqDemo")
+    .Enrich.WithProperty("Environment", "Demo")
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{ServiceName}/{SourceContext}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.Seq("http://localhost:5341")
     .CreateLogger();
 
 try
 {
     Log.Information("=== .NET Seq Demo Started ===");
+    Log.Information("模擬微服務: {Services}", new[] { SERVICE_PLAYER, SERVICE_GAME, SERVICE_WALLET, SERVICE_PAYMENT, SERVICE_RISK, SERVICE_NOTIFICATION });
     Log.Information("Press Ctrl+C to stop");
 
     // 啟動三個 workflow 的定時執行
@@ -42,6 +53,7 @@ finally
 }
 
 // Workflow 1: 下注流程 (BettingWorkflow) - 8 步驟
+// 模擬跨服務調用: PlayerService -> WalletService -> GameService -> WalletService
 async Task RunBettingWorkflow(CancellationToken cancellationToken)
 {
     var random = new Random();
@@ -62,10 +74,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
             using (LogContext.PushProperty("WorkflowName", workflowName))
-            using (LogContext.PushProperty("Environment", "Demo"))
-            using (LogContext.PushProperty("Application", ".NET"))
             {
-                // 步驟 1: 玩家登入
+                // 步驟 1: 玩家登入 (PlayerService.AuthenticationHandler)
                 var loginContext = new
                 {
                     IP = $"{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}",
@@ -74,6 +84,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     Location = new[] { "台灣", "香港", "新加坡", "日本" }[random.Next(4)]
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
+                using (LogContext.PushProperty("SourceContext", "AuthenticationHandler"))
                 using (LogContext.PushProperty("WorkflowStep", "1-Login"))
                 using (LogContext.PushProperty("EventType", "PlayerLogin"))
                 using (LogContext.PushProperty("LoginContext", loginContext, destructureObjects: true))
@@ -84,7 +96,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(100, cancellationToken);
 
-                // 步驟 2: 玩家驗證
+                // 步驟 2: 玩家驗證 (PlayerService.AuthorizationHandler)
                 var authDetails = new
                 {
                     AuthMethod = new[] { "Password", "Biometric", "2FA", "OAuth" }[random.Next(4)],
@@ -93,6 +105,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     AuthTimestamp = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
+                using (LogContext.PushProperty("SourceContext", "AuthorizationHandler"))
                 using (LogContext.PushProperty("WorkflowStep", "2-Authentication"))
                 using (LogContext.PushProperty("EventType", "PlayerAuthenticated"))
                 using (LogContext.PushProperty("AuthDetails", authDetails, destructureObjects: true))
@@ -103,7 +117,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(100, cancellationToken);
 
-                // 步驟 3: 查詢餘額
+                // 步驟 3: 查詢餘額 (WalletService.BalanceManager)
                 var currentBalance = random.Next(100, 10000);
                 var balanceInfo = new
                 {
@@ -113,6 +127,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     LastUpdated = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                using (LogContext.PushProperty("SourceContext", "BalanceManager"))
                 using (LogContext.PushProperty("WorkflowStep", "3-BalanceCheck"))
                 using (LogContext.PushProperty("EventType", "BalanceChecked"))
                 using (LogContext.PushProperty("BalanceInfo", balanceInfo, destructureObjects: true))
@@ -130,7 +146,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(100, cancellationToken);
 
-                // 步驟 4: 遊戲開始
+                // 步驟 4: 遊戲開始 (GameService.GameSessionManager)
                 var gameId = $"GAME_{random.Next(1, 99)}";
                 var tableId = $"TABLE_{random.Next(1, 20)}";
                 var gameDetails = new
@@ -143,6 +159,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     MaxBet = 1000
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
+                using (LogContext.PushProperty("SourceContext", "GameSessionManager"))
                 using (LogContext.PushProperty("WorkflowStep", "4-GameStart"))
                 using (LogContext.PushProperty("EventType", "GameStarted"))
                 using (LogContext.PushProperty("GameId", gameId))
@@ -173,11 +191,11 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(200, cancellationToken);
 
-                // 步驟 5: 下注
+                // 步驟 5: 下注 (GameService.BettingHandler)
                 var betId = Guid.NewGuid().ToString();
                 var betAmount = random.Next(10, 500);
 
-                // 檢查餘額是否足夠 (10% 機率不足)
+                // 檢查餘額是否足夠 (10% 機率不足) - WalletService 驗證
                 if (random.Next(0, 10) == 0)
                 {
                     betAmount = currentBalance + random.Next(100, 500); // 超過餘額
@@ -190,6 +208,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                         Currency = balanceInfo.Currency
                     };
 
+                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                    using (LogContext.PushProperty("SourceContext", "BalanceValidator"))
                     using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
                     using (LogContext.PushProperty("EventType", "BetRejected"))
                     using (LogContext.PushProperty("BetId", betId))
@@ -199,8 +219,12 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                             userId, betAmount, currentBalance);
                     }
 
-                    // 結束此 workflow
-                    Log.Warning("✗ BettingWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    // 發送通知 (NotificationService)
+                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                    {
+                        Log.Warning("BettingWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    }
                     await Task.Delay(2000, cancellationToken);
                     continue;
                 }
@@ -216,6 +240,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                         ExcessAmount = betAmount - 1000
                     };
 
+                    using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
+                    using (LogContext.PushProperty("SourceContext", "BettingLimitValidator"))
                     using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
                     using (LogContext.PushProperty("EventType", "BetLimitExceeded"))
                     using (LogContext.PushProperty("BetId", betId))
@@ -238,6 +264,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     Timestamp = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
+                using (LogContext.PushProperty("SourceContext", "BettingHandler"))
                 using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
                 using (LogContext.PushProperty("EventType", "BetPlaced"))
                 using (LogContext.PushProperty("BetId", betId))
@@ -249,7 +277,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(300, cancellationToken);
 
-                // 步驟 6: 遊戲結果
+                // 步驟 6: 遊戲結果 (GameService.ResultHandler)
                 var gameRound = $"ROUND_{random.Next(10000, 99999)}";
                 var resultDetails = new
                 {
@@ -259,6 +287,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     Timestamp = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
+                using (LogContext.PushProperty("SourceContext", "ResultHandler"))
                 using (LogContext.PushProperty("WorkflowStep", "6-GameResult"))
                 using (LogContext.PushProperty("EventType", "GameResult"))
                 using (LogContext.PushProperty("ResultDetails", resultDetails, destructureObjects: true))
@@ -269,7 +299,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(100, cancellationToken);
 
-                // 步驟 7: 注單結算
+                // 步驟 7: 注單結算 (WalletService.SettlementProcessor)
                 var isWin = random.Next(0, 2) == 1;
                 var winAmount = isWin ? betAmount * random.Next(2, 5) : 0;
                 var profit = winAmount - betAmount;
@@ -286,6 +316,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     SettledAt = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                using (LogContext.PushProperty("SourceContext", "SettlementProcessor"))
                 using (LogContext.PushProperty("WorkflowStep", "7-Settlement"))
                 using (LogContext.PushProperty("EventType", "BetSettled"))
                 using (LogContext.PushProperty("TransactionId", transactionId))
@@ -313,7 +345,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(100, cancellationToken);
 
-                // 步驟 8: 餘額更新
+                // 步驟 8: 餘額更新 (WalletService.BalanceManager)
                 var newBalance = currentBalance + profit;
                 var balanceChange = new
                 {
@@ -325,6 +357,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     Timestamp = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                using (LogContext.PushProperty("SourceContext", "BalanceManager"))
                 using (LogContext.PushProperty("WorkflowStep", "8-BalanceUpdate"))
                 using (LogContext.PushProperty("EventType", "BalanceUpdated"))
                 using (LogContext.PushProperty("BalanceChange", balanceChange, destructureObjects: true))
@@ -351,7 +385,12 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                     }
                 }
 
-                Log.Information("✓ BettingWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                // 完成通知 (NotificationService)
+                using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                using (LogContext.PushProperty("SourceContext", "WorkflowNotifier"))
+                {
+                    Log.Information("BettingWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                }
             }
 
             await Task.Delay(2000, cancellationToken); // 每 2 秒執行一次
@@ -369,6 +408,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 }
 
 // Workflow 2: 存款流程 (DepositWorkflow) - 4 步驟
+// 模擬跨服務調用: WalletService -> PaymentService -> WalletService
 async Task RunDepositWorkflow(CancellationToken cancellationToken)
 {
     var random = new Random();
@@ -390,10 +430,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
             using (LogContext.PushProperty("WorkflowName", workflowName))
-            using (LogContext.PushProperty("Environment", "Demo"))
-            using (LogContext.PushProperty("Application", ".NET"))
             {
-                // 步驟 1: 發起存款
+                // 步驟 1: 發起存款 (WalletService.DepositRequestHandler)
                 var depositAmount = random.Next(100, 5000);
                 var depositRequest = new
                 {
@@ -403,6 +441,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     RequestedAt = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                using (LogContext.PushProperty("SourceContext", "DepositRequestHandler"))
                 using (LogContext.PushProperty("WorkflowStep", "1-InitiateDeposit"))
                 using (LogContext.PushProperty("EventType", "DepositInitiated"))
                 using (LogContext.PushProperty("DepositRequest", depositRequest, destructureObjects: true))
@@ -410,27 +450,31 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     Log.Information("發起存款: {UserId} requests {Amount} {Currency} via {PaymentMethod}",
                         userId, depositAmount, depositRequest.Currency, depositRequest.PaymentMethod);
 
-                    // 金額超過限制警告 (15% 機率)
+                    // 金額超過限制警告 (15% 機率) - RiskService 檢查
                     if (depositAmount > 3000 && random.Next(0, 100) < 15)
                     {
-                        var limitWarning = new
+                        using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                        using (LogContext.PushProperty("SourceContext", "TransactionLimitChecker"))
                         {
-                            Amount = depositAmount,
-                            DailyLimit = 10000,
-                            SingleTransactionLimit = 5000,
-                            RequiresAdditionalVerification = depositAmount > 5000
-                        };
-                        using (LogContext.PushProperty("LimitWarning", limitWarning, destructureObjects: true))
-                        {
-                            Log.Warning("存款金額警告: {UserId} 存款 {Amount} 接近限額，需要額外驗證: {RequiresAdditionalVerification}",
-                                userId, depositAmount, limitWarning.RequiresAdditionalVerification);
+                            var limitWarning = new
+                            {
+                                Amount = depositAmount,
+                                DailyLimit = 10000,
+                                SingleTransactionLimit = 5000,
+                                RequiresAdditionalVerification = depositAmount > 5000
+                            };
+                            using (LogContext.PushProperty("LimitWarning", limitWarning, destructureObjects: true))
+                            {
+                                Log.Warning("存款金額警告: {UserId} 存款 {Amount} 接近限額，需要額外驗證: {RequiresAdditionalVerification}",
+                                    userId, depositAmount, limitWarning.RequiresAdditionalVerification);
+                            }
                         }
                     }
                 }
 
                 await Task.Delay(100, cancellationToken);
 
-                // 步驟 2: 驗證支付方式
+                // 步驟 2: 驗證支付方式 (PaymentService.PaymentValidator)
                 var isValidationSuccess = random.Next(0, 100) > 5; // 95% 成功率
                 var validationDetails = new
                 {
@@ -441,6 +485,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     FailureReason = isValidationSuccess ? null : new[] { "KYC_NOT_VERIFIED", "PAYMENT_METHOD_SUSPENDED", "ACCOUNT_RESTRICTED" }[random.Next(3)]
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                using (LogContext.PushProperty("SourceContext", "PaymentValidator"))
                 using (LogContext.PushProperty("WorkflowStep", "2-ValidatePayment"))
                 using (LogContext.PushProperty("EventType", isValidationSuccess ? "PaymentValidated" : "PaymentValidationFailed"))
                 using (LogContext.PushProperty("ValidationDetails", validationDetails, destructureObjects: true))
@@ -454,17 +500,24 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     {
                         Log.Error("驗證失敗: {UserId} 的支付方式 {PaymentMethod} 驗證失敗，原因: {FailureReason}",
                             userId, depositRequest.PaymentMethod, validationDetails.FailureReason);
-
-                        // 結束此 workflow
-                        Log.Warning("✗ DepositWorkflow 因驗證失敗而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
-                        await Task.Delay(2000, cancellationToken);
-                        continue;
                     }
+                }
+
+                if (!isValidationSuccess)
+                {
+                    // 發送通知 (NotificationService)
+                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                    {
+                        Log.Warning("DepositWorkflow 因驗證失敗而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    }
+                    await Task.Delay(2000, cancellationToken);
+                    continue;
                 }
 
                 await Task.Delay(200, cancellationToken);
 
-                // 步驟 3: 處理支付
+                // 步驟 3: 處理支付 (PaymentService.PaymentProcessor)
                 var transactionId = Guid.NewGuid().ToString();
                 var isSuccess = random.Next(0, 10) > 0; // 90% 成功率
                 var fee = depositAmount * 0.02m; // 2% 手續費
@@ -479,6 +532,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                         RetryCount = random.Next(1, 4),
                         Timestamp = DateTime.UtcNow
                     };
+                    using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                    using (LogContext.PushProperty("SourceContext", "PaymentGatewayClient"))
                     using (LogContext.PushProperty("WorkflowStep", "3-ProcessPayment"))
                     using (LogContext.PushProperty("EventType", "PaymentProcessorConnectionError"))
                     using (LogContext.PushProperty("TransactionId", transactionId))
@@ -500,6 +555,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     ErrorCode = isSuccess ? null : new[] { "INSUFFICIENT_FUNDS", "CARD_DECLINED", "BANK_REJECTION", "FRAUD_DETECTED" }[random.Next(4)]
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                using (LogContext.PushProperty("SourceContext", "PaymentProcessor"))
                 using (LogContext.PushProperty("WorkflowStep", "3-ProcessPayment"))
                 using (LogContext.PushProperty("EventType", isSuccess ? "PaymentProcessed" : "PaymentFailed"))
                 using (LogContext.PushProperty("TransactionId", transactionId))
@@ -519,7 +576,7 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
 
                 await Task.Delay(100, cancellationToken);
 
-                // 步驟 4: 餘額入帳 (僅在成功時)
+                // 步驟 4: 餘額入帳 (WalletService.BalanceManager) - 僅在成功時
                 if (isSuccess)
                 {
                     var newBalance = random.Next(1000, 20000);
@@ -531,6 +588,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                         CreditedAt = DateTime.UtcNow
                     };
 
+                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                    using (LogContext.PushProperty("SourceContext", "BalanceManager"))
                     using (LogContext.PushProperty("WorkflowStep", "4-CreditBalance"))
                     using (LogContext.PushProperty("EventType", "BalanceCredited"))
                     using (LogContext.PushProperty("CreditDetails", creditDetails, destructureObjects: true))
@@ -540,7 +599,12 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     }
                 }
 
-                Log.Information("✓ DepositWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                // 完成通知 (NotificationService)
+                using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                using (LogContext.PushProperty("SourceContext", "WorkflowNotifier"))
+                {
+                    Log.Information("DepositWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                }
             }
 
             await Task.Delay(2000, cancellationToken);
@@ -558,6 +622,7 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
 }
 
 // Workflow 3: 提款流程 (WithdrawalWorkflow) - 3 步驟
+// 模擬跨服務調用: WalletService -> RiskService -> PaymentService
 async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
 {
     var random = new Random();
@@ -579,14 +644,12 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
             using (LogContext.PushProperty("WorkflowName", workflowName))
-            using (LogContext.PushProperty("Environment", "Demo"))
-            using (LogContext.PushProperty("Application", ".NET"))
             {
-                // 步驟 1: 提款請求
+                // 步驟 1: 提款請求 (WalletService.WithdrawalRequestHandler)
                 var withdrawalAmount = random.Next(100, 3000);
                 var userBalance = random.Next(0, 5000);
 
-                // 餘額不足錯誤 (12% 機率)
+                // 餘額不足錯誤 (12% 機率) - WalletService.BalanceValidator
                 if (userBalance < withdrawalAmount && random.Next(0, 100) < 12)
                 {
                     var insufficientBalanceError = new
@@ -597,6 +660,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                         Currency = new[] { "USD", "TWD", "HKD", "SGD" }[random.Next(4)]
                     };
 
+                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                    using (LogContext.PushProperty("SourceContext", "BalanceValidator"))
                     using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
                     using (LogContext.PushProperty("EventType", "WithdrawalRejectedInsufficientBalance"))
                     using (LogContext.PushProperty("InsufficientBalanceError", insufficientBalanceError, destructureObjects: true))
@@ -605,13 +670,17 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                             userId, withdrawalAmount, userBalance);
                     }
 
-                    // 結束此 workflow
-                    Log.Warning("✗ WithdrawalWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    // 發送通知 (NotificationService)
+                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                    {
+                        Log.Warning("WithdrawalWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    }
                     await Task.Delay(2000, cancellationToken);
                     continue;
                 }
 
-                // 帳戶凍結錯誤 (5% 機率)
+                // 帳戶凍結錯誤 (5% 機率) - RiskService.AccountStatusChecker
                 if (random.Next(0, 100) < 5)
                 {
                     var accountFrozenError = new
@@ -621,6 +690,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                         ContactSupport = true
                     };
 
+                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                    using (LogContext.PushProperty("SourceContext", "AccountStatusChecker"))
                     using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
                     using (LogContext.PushProperty("EventType", "WithdrawalRejectedAccountFrozen"))
                     using (LogContext.PushProperty("AccountFrozenError", accountFrozenError, destructureObjects: true))
@@ -629,8 +700,12 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                             userId, accountFrozenError.Reason);
                     }
 
-                    // 結束此 workflow
-                    Log.Warning("✗ WithdrawalWorkflow 因帳戶凍結而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    // 發送通知 (NotificationService)
+                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                    {
+                        Log.Warning("WithdrawalWorkflow 因帳戶凍結而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    }
                     await Task.Delay(2000, cancellationToken);
                     continue;
                 }
@@ -644,50 +719,56 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                     RequestedAt = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                using (LogContext.PushProperty("SourceContext", "WithdrawalRequestHandler"))
                 using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
                 using (LogContext.PushProperty("EventType", "WithdrawalRequested"))
                 using (LogContext.PushProperty("WithdrawalRequest", withdrawalRequest, destructureObjects: true))
                 {
                     Log.Information("提款請求: {UserId} requests {Amount} {Currency} via {WithdrawalMethod}",
                         userId, withdrawalAmount, withdrawalRequest.Currency, withdrawalRequest.WithdrawalMethod);
+                }
 
-                    // KYC 未完成警告 (10% 機率)
-                    if (random.Next(0, 10) == 0)
+                // KYC 未完成警告 (10% 機率) - PlayerService.KYCValidator
+                if (random.Next(0, 10) == 0)
+                {
+                    var kycWarning = new
                     {
-                        var kycWarning = new
-                        {
-                            KYCStatus = "Incomplete",
-                            MissingDocuments = new[] { "ID Verification", "Address Proof" },
-                            RequiredForAmount = withdrawalAmount > 1000
-                        };
-                        using (LogContext.PushProperty("KYCWarning", kycWarning, destructureObjects: true))
-                        {
-                            Log.Warning("KYC 警告: {UserId} KYC 未完成，缺少文件，大額提款需要完成 KYC",
-                                userId);
-                        }
+                        KYCStatus = "Incomplete",
+                        MissingDocuments = new[] { "ID Verification", "Address Proof" },
+                        RequiredForAmount = withdrawalAmount > 1000
+                    };
+                    using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
+                    using (LogContext.PushProperty("SourceContext", "KYCValidator"))
+                    using (LogContext.PushProperty("KYCWarning", kycWarning, destructureObjects: true))
+                    {
+                        Log.Warning("KYC 警告: {UserId} KYC 未完成，缺少文件，大額提款需要完成 KYC",
+                            userId);
                     }
+                }
 
-                    // 超過每日提款限制警告 (8% 機率)
-                    if (withdrawalAmount > 2000 && random.Next(0, 100) < 8)
+                // 超過每日提款限制警告 (8% 機率) - RiskService.TransactionLimitChecker
+                if (withdrawalAmount > 2000 && random.Next(0, 100) < 8)
+                {
+                    var dailyLimitWarning = new
                     {
-                        var dailyLimitWarning = new
-                        {
-                            RequestedAmount = withdrawalAmount,
-                            DailyLimit = 5000,
-                            TodayWithdrawn = random.Next(1000, 3000),
-                            RemainingLimit = 5000 - random.Next(1000, 3000)
-                        };
-                        using (LogContext.PushProperty("DailyLimitWarning", dailyLimitWarning, destructureObjects: true))
-                        {
-                            Log.Warning("每日提款限額警告: {UserId} 請求 {RequestedAmount}，今日已提款 {TodayWithdrawn}，剩餘額度 {RemainingLimit}",
-                                userId, withdrawalAmount, dailyLimitWarning.TodayWithdrawn, dailyLimitWarning.RemainingLimit);
-                        }
+                        RequestedAmount = withdrawalAmount,
+                        DailyLimit = 5000,
+                        TodayWithdrawn = random.Next(1000, 3000),
+                        RemainingLimit = 5000 - random.Next(1000, 3000)
+                    };
+                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                    using (LogContext.PushProperty("SourceContext", "TransactionLimitChecker"))
+                    using (LogContext.PushProperty("DailyLimitWarning", dailyLimitWarning, destructureObjects: true))
+                    {
+                        Log.Warning("每日提款限額警告: {UserId} 請求 {RequestedAmount}，今日已提款 {TodayWithdrawn}，剩餘額度 {RemainingLimit}",
+                            userId, withdrawalAmount, dailyLimitWarning.TodayWithdrawn, dailyLimitWarning.RemainingLimit);
                     }
                 }
 
                 await Task.Delay(150, cancellationToken);
 
-                // 步驟 2: 風險評估
+                // 步驟 2: 風險評估 (RiskService.RiskAssessmentEngine)
                 var riskScore = random.Next(0, 100);
                 var riskLevel = riskScore < 30 ? "Low" : riskScore < 70 ? "Medium" : "High";
                 var riskPassed = riskScore < 70;
@@ -707,6 +788,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                     AssessedAt = DateTime.UtcNow
                 };
 
+                using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                using (LogContext.PushProperty("SourceContext", "RiskAssessmentEngine"))
                 using (LogContext.PushProperty("WorkflowStep", "2-RiskAssessment"))
                 using (LogContext.PushProperty("EventType", "RiskAssessed"))
                 using (LogContext.PushProperty("RiskAssessment", riskAssessment, destructureObjects: true))
@@ -726,21 +809,23 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                         Log.Information("風險評估: Score {RiskScore}, Level {RiskLevel}, Passed: {Passed}",
                             riskScore, riskLevel, riskPassed);
                     }
+                }
 
-                    // 異常交易模式警告 (10% 機率)
-                    if (random.Next(0, 10) == 0)
+                // 異常交易模式警告 (10% 機率) - RiskService.PatternDetector
+                if (random.Next(0, 10) == 0)
+                {
+                    var patternWarning = new
                     {
-                        var patternWarning = new
-                        {
-                            Pattern = new[] { "FrequentWithdrawals", "LargeAmountAfterDeposit", "UnusualTiming", "NewDevice" }[random.Next(4)],
-                            Confidence = random.Next(60, 95),
-                            RequiresReview = true
-                        };
-                        using (LogContext.PushProperty("PatternWarning", patternWarning, destructureObjects: true))
-                        {
-                            Log.Warning("異常交易模式: {UserId} 偵測到 {Pattern}，信心度: {Confidence}%",
-                                userId, patternWarning.Pattern, patternWarning.Confidence);
-                        }
+                        Pattern = new[] { "FrequentWithdrawals", "LargeAmountAfterDeposit", "UnusualTiming", "NewDevice" }[random.Next(4)],
+                        Confidence = random.Next(60, 95),
+                        RequiresReview = true
+                    };
+                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                    using (LogContext.PushProperty("SourceContext", "PatternDetector"))
+                    using (LogContext.PushProperty("PatternWarning", patternWarning, destructureObjects: true))
+                    {
+                        Log.Warning("異常交易模式: {UserId} 偵測到 {Pattern}，信心度: {Confidence}%",
+                            userId, patternWarning.Pattern, patternWarning.Confidence);
                     }
                 }
 
@@ -751,7 +836,7 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
 
                 if (riskPassed)
                 {
-                    // 核准
+                    // 核准 (PaymentService.WithdrawalApprover)
                     var approvalDetails = new
                     {
                         TransactionId = transactionId,
@@ -760,6 +845,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                         EstimatedCompletionTime = DateTime.UtcNow.AddHours(24)
                     };
 
+                    using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                    using (LogContext.PushProperty("SourceContext", "WithdrawalApprover"))
                     using (LogContext.PushProperty("WorkflowStep", "3-Approval"))
                     using (LogContext.PushProperty("EventType", "WithdrawalApproved"))
                     using (LogContext.PushProperty("TransactionId", transactionId))
@@ -771,7 +858,7 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                 }
                 else
                 {
-                    // 標記需要人工審核
+                    // 標記需要人工審核 (RiskService.ManualReviewQueue)
                     var flagDetails = new
                     {
                         TransactionId = transactionId,
@@ -781,6 +868,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                         ReviewerAssigned = $"REVIEWER_{random.Next(1, 10)}"
                     };
 
+                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                    using (LogContext.PushProperty("SourceContext", "ManualReviewQueue"))
                     using (LogContext.PushProperty("WorkflowStep", "3-FlaggedReview"))
                     using (LogContext.PushProperty("EventType", "WithdrawalFlagged"))
                     using (LogContext.PushProperty("TransactionId", transactionId))
@@ -791,7 +880,12 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                     }
                 }
 
-                Log.Information("✓ WithdrawalWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                // 完成通知 (NotificationService)
+                using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                using (LogContext.PushProperty("SourceContext", "WorkflowNotifier"))
+                {
+                    Log.Information("WithdrawalWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                }
             }
 
             await Task.Delay(2000, cancellationToken);

@@ -18,6 +18,16 @@ import (
 
 const seqURL = "http://localhost:5341/api/events/raw?clef"
 
+// 定義微服務名稱
+const (
+	SERVICE_PLAYER       = "PlayerService"
+	SERVICE_GAME         = "GameService"
+	SERVICE_WALLET       = "WalletService"
+	SERVICE_PAYMENT      = "PaymentService"
+	SERVICE_RISK         = "RiskService"
+	SERVICE_NOTIFICATION = "NotificationService"
+)
+
 // LogLevel represents the severity of a log event
 type LogLevel string
 
@@ -64,7 +74,7 @@ func (l *SeqLogger) Log(level LogLevel, messageTemplate string, properties map[s
 	}
 
 	// Add default properties
-	flatEvent["Application"] = "Go"
+	flatEvent["Application"] = "GolangSeqDemo"
 	flatEvent["Environment"] = "Demo"
 
 	// Add user properties
@@ -80,8 +90,22 @@ func (l *SeqLogger) Log(level LogLevel, messageTemplate string, properties map[s
 		return
 	}
 
-	// Also print to console
-	fmt.Printf("[%s] %s %v\n", level, messageTemplate, properties)
+	// Also print to console with ServiceName/SourceContext
+	serviceName := ""
+	sourceContext := ""
+	if properties != nil {
+		if sn, ok := properties["ServiceName"].(string); ok {
+			serviceName = sn
+		}
+		if sc, ok := properties["SourceContext"].(string); ok {
+			sourceContext = sc
+		}
+	}
+	if serviceName != "" && sourceContext != "" {
+		fmt.Printf("[%s] [%s/%s] %s\n", level, serviceName, sourceContext, messageTemplate)
+	} else {
+		fmt.Printf("[%s] %s\n", level, messageTemplate)
+	}
 
 	// Send to Seq
 	resp, err := l.client.Post(seqURL, "application/vnd.serilog.clef", bytes.NewBuffer(jsonData))
@@ -131,6 +155,7 @@ func randomBool(probability float64) bool {
 }
 
 // Workflow 1: 下注流程 (BettingWorkflow) - 8 步驟
+// 模擬跨服務調用: PlayerService -> WalletService -> GameService -> WalletService
 func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 	for {
 		select {
@@ -145,14 +170,14 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			workflowName := "BettingWorkflow"
 
 			baseContext := map[string]interface{}{
-				"TraceId":      traceID,
+				"TraceId":       traceID,
 				"CorrelationId": correlationID,
 				"UserId":        userID,
 				"SessionId":     sessionID,
 				"WorkflowName":  workflowName,
 			}
 
-			// 步驟 1: 玩家登入
+			// 步驟 1: 玩家登入 (PlayerService.AuthenticationHandler)
 			loginContext := map[string]interface{}{
 				"IP":       fmt.Sprintf("%d.%d.%d.%d", randomInt(1, 255), randomInt(1, 255), randomInt(1, 255), randomInt(1, 255)),
 				"Device":   randomChoice([]string{"iOS", "Android", "Desktop", "Mobile Web"}),
@@ -161,6 +186,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props := copyMap(baseContext)
+			props["ServiceName"] = SERVICE_PLAYER
+			props["SourceContext"] = "AuthenticationHandler"
 			props["WorkflowStep"] = "1-Login"
 			props["EventType"] = "PlayerLogin"
 			props["LoginContext"] = loginContext
@@ -170,7 +197,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(100 * time.Millisecond)
 
-			// 步驟 2: 玩家驗證
+			// 步驟 2: 玩家驗證 (PlayerService.AuthorizationHandler)
 			authDetails := map[string]interface{}{
 				"AuthMethod":    randomChoice([]string{"Password", "Biometric", "2FA", "OAuth"}),
 				"Token":         uuid.New().String(),
@@ -179,6 +206,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_PLAYER
+			props["SourceContext"] = "AuthorizationHandler"
 			props["WorkflowStep"] = "2-Authentication"
 			props["EventType"] = "PlayerAuthenticated"
 			props["AuthDetails"] = authDetails
@@ -188,7 +217,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(100 * time.Millisecond)
 
-			// 步驟 3: 查詢餘額
+			// 步驟 3: 查詢餘額 (WalletService.BalanceManager)
 			currentBalance := randomInt(100, 10000)
 			currency := randomChoice([]string{"USD", "TWD", "HKD", "SGD"})
 			balanceInfo := map[string]interface{}{
@@ -199,6 +228,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_WALLET
+			props["SourceContext"] = "BalanceManager"
 			props["WorkflowStep"] = "3-BalanceCheck"
 			props["EventType"] = "BalanceChecked"
 			props["BalanceInfo"] = balanceInfo
@@ -209,6 +240,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			// 低餘額警告 (20% 機率)
 			if currentBalance < 500 && randomBool(0.2) {
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_WALLET
+				props["SourceContext"] = "BalanceManager"
 				props["WorkflowStep"] = "3-BalanceCheck"
 				props["EventType"] = "BalanceChecked"
 				props["BalanceInfo"] = balanceInfo
@@ -219,7 +252,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(100 * time.Millisecond)
 
-			// 步驟 4: 遊戲開始
+			// 步驟 4: 遊戲開始 (GameService.GameSessionManager)
 			gameID := fmt.Sprintf("GAME_%d", randomInt(1, 99))
 			tableID := fmt.Sprintf("TABLE_%d", randomInt(1, 20))
 			gameDetails := map[string]interface{}{
@@ -232,6 +265,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_GAME
+			props["SourceContext"] = "GameSessionManager"
 			props["WorkflowStep"] = "4-GameStart"
 			props["EventType"] = "GameStarted"
 			props["GameId"] = gameID
@@ -252,6 +287,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_GAME
+				props["SourceContext"] = "GameSessionManager"
 				props["WorkflowStep"] = "4-GameStart"
 				props["EventType"] = "GameStarted"
 				props["TableId"] = tableID
@@ -266,7 +303,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			betID := uuid.New().String()
 			betAmount := randomInt(10, 500)
 
-			// 檢查餘額是否足夠 (10% 機率不足)
+			// 檢查餘額是否足夠 (10% 機率不足) - WalletService 驗證
 			if randomBool(0.1) {
 				betAmount = currentBalance + randomInt(100, 500) // 超過餘額
 				insufficientError := map[string]interface{}{
@@ -278,6 +315,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_WALLET
+				props["SourceContext"] = "BalanceValidator"
 				props["WorkflowStep"] = "5-PlaceBet"
 				props["EventType"] = "BetRejected"
 				props["BetId"] = betID
@@ -286,14 +325,17 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 				props["AvailableBalance"] = currentBalance
 				logger.Error("下注失敗 - 餘額不足: {UserId} 嘗試下注 {RequestedAmount}，但餘額僅 {AvailableBalance}", props)
 
+				// 發送通知 (NotificationService)
 				props = copyMap(baseContext)
-				logger.Warning("✗ BettingWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", props)
+				props["ServiceName"] = SERVICE_NOTIFICATION
+				props["SourceContext"] = "AlertDispatcher"
+				logger.Warning("BettingWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", props)
 
 				time.Sleep(2 * time.Second)
 				continue
 			}
 
-			// 檢查下注是否超過最大限制 (5% 機率)
+			// 檢查下注是否超過最大限制 (5% 機率) - GameService 驗證
 			if betAmount > 1000 && randomBool(0.05) {
 				limitError := map[string]interface{}{
 					"BetId":           betID,
@@ -303,6 +345,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_GAME
+				props["SourceContext"] = "BettingLimitValidator"
 				props["WorkflowStep"] = "5-PlaceBet"
 				props["EventType"] = "BetLimitExceeded"
 				props["BetId"] = betID
@@ -324,6 +368,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_GAME
+			props["SourceContext"] = "BettingHandler"
 			props["WorkflowStep"] = "5-PlaceBet"
 			props["EventType"] = "BetPlaced"
 			props["BetId"] = betID
@@ -335,7 +381,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(300 * time.Millisecond)
 
-			// 步驟 6: 遊戲結果
+			// 步驟 6: 遊戲結果 (GameService.ResultHandler)
 			gameRound := fmt.Sprintf("ROUND_%d", randomInt(10000, 99999))
 			resultDetails := map[string]interface{}{
 				"Result":    randomChoice([]string{"Player Win", "Banker Win", "Tie", "Red", "Black"}),
@@ -345,6 +391,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_GAME
+			props["SourceContext"] = "ResultHandler"
 			props["WorkflowStep"] = "6-GameResult"
 			props["EventType"] = "GameResult"
 			props["ResultDetails"] = resultDetails
@@ -355,7 +403,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(100 * time.Millisecond)
 
-			// 步驟 7: 注單結算
+			// 步驟 7: 注單結算 (WalletService.SettlementProcessor)
 			isWin := randomBool(0.5)
 			var winAmount int
 			if isWin {
@@ -382,6 +430,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_WALLET
+			props["SourceContext"] = "SettlementProcessor"
 			props["WorkflowStep"] = "7-Settlement"
 			props["EventType"] = "BetSettled"
 			props["TransactionId"] = transactionID
@@ -401,6 +451,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_WALLET
+				props["SourceContext"] = "SettlementProcessor"
 				props["WorkflowStep"] = "7-Settlement"
 				props["TransactionId"] = transactionID
 				props["DelayInfo"] = delayInfo
@@ -411,7 +463,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(100 * time.Millisecond)
 
-			// 步驟 8: 餘額更新
+			// 步驟 8: 餘額更新 (WalletService.BalanceManager)
 			newBalance := currentBalance + profit
 			changeType := "Debit"
 			if profit >= 0 {
@@ -428,6 +480,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_WALLET
+			props["SourceContext"] = "BalanceManager"
 			props["WorkflowStep"] = "8-BalanceUpdate"
 			props["EventType"] = "BalanceUpdated"
 			props["BalanceChange"] = balanceChange
@@ -448,6 +502,8 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_WALLET
+				props["SourceContext"] = "BalanceManager"
 				props["WorkflowStep"] = "8-BalanceUpdate"
 				props["TransactionId"] = transactionID
 				props["UpdateError"] = updateError
@@ -455,8 +511,11 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 				logger.Error("餘額更新失敗: Transaction {TransactionId}，錯誤: {ErrorMessage}", props)
 			}
 
+			// 完成通知 (NotificationService)
 			props = copyMap(baseContext)
-			logger.Info("✓ BettingWorkflow completed for {UserId} with TraceId: {TraceId}", props)
+			props["ServiceName"] = SERVICE_NOTIFICATION
+			props["SourceContext"] = "WorkflowNotifier"
+			logger.Info("BettingWorkflow completed for {UserId} with TraceId: {TraceId}", props)
 
 			time.Sleep(2 * time.Second) // 每 2 秒執行一次
 		}
@@ -464,6 +523,7 @@ func runBettingWorkflow(ctx context.Context, logger *SeqLogger) {
 }
 
 // Workflow 2: 存款流程 (DepositWorkflow) - 4 步驟
+// 模擬跨服務調用: WalletService -> PaymentService -> WalletService
 func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 	time.Sleep(500 * time.Millisecond) // 稍微延遲開始時間
 
@@ -486,7 +546,7 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 				"WorkflowName":  workflowName,
 			}
 
-			// 步驟 1: 發起存款
+			// 步驟 1: 發起存款 (WalletService.DepositRequestHandler)
 			depositAmount := randomInt(100, 5000)
 			depositRequest := map[string]interface{}{
 				"Amount":        depositAmount,
@@ -496,6 +556,8 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props := copyMap(baseContext)
+			props["ServiceName"] = SERVICE_WALLET
+			props["SourceContext"] = "DepositRequestHandler"
 			props["WorkflowStep"] = "1-InitiateDeposit"
 			props["EventType"] = "DepositInitiated"
 			props["DepositRequest"] = depositRequest
@@ -504,16 +566,18 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 			props["PaymentMethod"] = depositRequest["PaymentMethod"]
 			logger.Info("發起存款: {UserId} requests {Amount} {Currency} via {PaymentMethod}", props)
 
-			// 金額超過限制警告 (15% 機率)
+			// 金額超過限制警告 (15% 機率) - RiskService 檢查
 			if depositAmount > 3000 && randomBool(0.15) {
 				limitWarning := map[string]interface{}{
-					"Amount":                        depositAmount,
-					"DailyLimit":                    10000,
-					"SingleTransactionLimit":        5000,
+					"Amount":                         depositAmount,
+					"DailyLimit":                     10000,
+					"SingleTransactionLimit":         5000,
 					"RequiresAdditionalVerification": depositAmount > 5000,
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_RISK
+				props["SourceContext"] = "TransactionLimitChecker"
 				props["WorkflowStep"] = "1-InitiateDeposit"
 				props["LimitWarning"] = limitWarning
 				props["Amount"] = depositAmount
@@ -523,7 +587,7 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(100 * time.Millisecond)
 
-			// 步驟 2: 驗證支付方式
+			// 步驟 2: 驗證支付方式 (PaymentService.PaymentValidator)
 			isValidationSuccess := randomBool(0.95) // 95% 成功率
 			var failureReason interface{} = nil
 			if !isValidationSuccess {
@@ -540,6 +604,8 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			if isValidationSuccess {
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_PAYMENT
+				props["SourceContext"] = "PaymentValidator"
 				props["WorkflowStep"] = "2-ValidatePayment"
 				props["EventType"] = "PaymentValidated"
 				props["ValidationDetails"] = validationDetails
@@ -548,6 +614,8 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 				logger.Info("驗證支付方式: {PaymentMethod} is valid, Processor: {ProcessorId}", props)
 			} else {
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_PAYMENT
+				props["SourceContext"] = "PaymentValidator"
 				props["WorkflowStep"] = "2-ValidatePayment"
 				props["EventType"] = "PaymentValidationFailed"
 				props["ValidationDetails"] = validationDetails
@@ -555,8 +623,11 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 				props["FailureReason"] = failureReason
 				logger.Error("驗證失敗: {UserId} 的支付方式 {PaymentMethod} 驗證失敗，原因: {FailureReason}", props)
 
+				// 發送通知 (NotificationService)
 				props = copyMap(baseContext)
-				logger.Warning("✗ DepositWorkflow 因驗證失敗而終止 for {UserId} with TraceId: {TraceId}", props)
+				props["ServiceName"] = SERVICE_NOTIFICATION
+				props["SourceContext"] = "AlertDispatcher"
+				logger.Warning("DepositWorkflow 因驗證失敗而終止 for {UserId} with TraceId: {TraceId}", props)
 
 				time.Sleep(2 * time.Second)
 				continue
@@ -564,7 +635,7 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(200 * time.Millisecond)
 
-			// 步驟 3: 處理支付
+			// 步驟 3: 處理支付 (PaymentService.PaymentProcessor)
 			transactionID := uuid.New().String()
 
 			// 支付處理器連線問題 (8% 機率)
@@ -577,6 +648,8 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_PAYMENT
+				props["SourceContext"] = "PaymentGatewayClient"
 				props["WorkflowStep"] = "3-ProcessPayment"
 				props["EventType"] = "PaymentProcessorConnectionError"
 				props["TransactionId"] = transactionID
@@ -611,6 +684,8 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			if isSuccess {
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_PAYMENT
+				props["SourceContext"] = "PaymentProcessor"
 				props["WorkflowStep"] = "3-ProcessPayment"
 				props["EventType"] = "PaymentProcessed"
 				props["TransactionId"] = transactionID
@@ -620,6 +695,8 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 				logger.Info("處理支付成功: Transaction {TransactionId}, Amount: {Amount}, Fee: {Fee}", props)
 			} else {
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_PAYMENT
+				props["SourceContext"] = "PaymentProcessor"
 				props["WorkflowStep"] = "3-ProcessPayment"
 				props["EventType"] = "PaymentFailed"
 				props["TransactionId"] = transactionID
@@ -630,17 +707,19 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(100 * time.Millisecond)
 
-			// 步驟 4: 餘額入帳 (僅在成功時)
+			// 步驟 4: 餘額入帳 (WalletService.BalanceManager) - 僅在成功時
 			if isSuccess {
 				newBalance := randomInt(1000, 20000)
 				creditDetails := map[string]interface{}{
-					"Amount":      paymentDetails["NetAmount"],
+					"Amount":        paymentDetails["NetAmount"],
 					"TransactionId": transactionID,
-					"NewBalance":  newBalance,
-					"CreditedAt":  time.Now().UTC(),
+					"NewBalance":    newBalance,
+					"CreditedAt":    time.Now().UTC(),
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_WALLET
+				props["SourceContext"] = "BalanceManager"
 				props["WorkflowStep"] = "4-CreditBalance"
 				props["EventType"] = "BalanceCredited"
 				props["CreditDetails"] = creditDetails
@@ -649,8 +728,11 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 				logger.Info("餘額入帳: {Amount} credited, New Balance: {NewBalance}", props)
 			}
 
+			// 完成通知 (NotificationService)
 			props = copyMap(baseContext)
-			logger.Info("✓ DepositWorkflow completed for {UserId} with TraceId: {TraceId}", props)
+			props["ServiceName"] = SERVICE_NOTIFICATION
+			props["SourceContext"] = "WorkflowNotifier"
+			logger.Info("DepositWorkflow completed for {UserId} with TraceId: {TraceId}", props)
 
 			time.Sleep(2 * time.Second)
 		}
@@ -658,6 +740,7 @@ func runDepositWorkflow(ctx context.Context, logger *SeqLogger) {
 }
 
 // Workflow 3: 提款流程 (WithdrawalWorkflow) - 3 步驟
+// 模擬跨服務調用: WalletService -> RiskService -> PaymentService
 func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 	time.Sleep(1 * time.Second) // 稍微延遲開始時間
 
@@ -684,7 +767,7 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 			withdrawalAmount := randomInt(100, 3000)
 			userBalance := randomInt(0, 5000)
 
-			// 餘額不足錯誤 (12% 機率)
+			// 餘額不足錯誤 (12% 機率) - WalletService.BalanceValidator
 			if userBalance < withdrawalAmount && randomBool(0.12) {
 				insufficientBalanceError := map[string]interface{}{
 					"RequestedAmount":  withdrawalAmount,
@@ -694,6 +777,8 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props := copyMap(baseContext)
+				props["ServiceName"] = SERVICE_WALLET
+				props["SourceContext"] = "BalanceValidator"
 				props["WorkflowStep"] = "1-RequestWithdrawal"
 				props["EventType"] = "WithdrawalRejectedInsufficientBalance"
 				props["InsufficientBalanceError"] = insufficientBalanceError
@@ -701,14 +786,17 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				props["AvailableBalance"] = userBalance
 				logger.Error("提款失敗 - 餘額不足: {UserId} 請求提款 {RequestedAmount}，但餘額僅 {AvailableBalance}", props)
 
+				// 發送通知 (NotificationService)
 				props = copyMap(baseContext)
-				logger.Warning("✗ WithdrawalWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", props)
+				props["ServiceName"] = SERVICE_NOTIFICATION
+				props["SourceContext"] = "AlertDispatcher"
+				logger.Warning("WithdrawalWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", props)
 
 				time.Sleep(2 * time.Second)
 				continue
 			}
 
-			// 帳戶凍結錯誤 (5% 機率)
+			// 帳戶凍結錯誤 (5% 機率) - RiskService.AccountStatusChecker
 			if randomBool(0.05) {
 				accountFrozenError := map[string]interface{}{
 					"Reason":         randomChoice([]string{"SUSPECTED_FRAUD", "PENDING_INVESTIGATION", "COMPLIANCE_HOLD", "DUPLICATE_ACCOUNT"}),
@@ -717,14 +805,19 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props := copyMap(baseContext)
+				props["ServiceName"] = SERVICE_RISK
+				props["SourceContext"] = "AccountStatusChecker"
 				props["WorkflowStep"] = "1-RequestWithdrawal"
 				props["EventType"] = "WithdrawalRejectedAccountFrozen"
 				props["AccountFrozenError"] = accountFrozenError
 				props["Reason"] = accountFrozenError["Reason"]
 				logger.Error("提款失敗 - 帳戶凍結: {UserId} 帳戶已凍結，原因: {Reason}", props)
 
+				// 發送通知 (NotificationService)
 				props = copyMap(baseContext)
-				logger.Warning("✗ WithdrawalWorkflow 因帳戶凍結而終止 for {UserId} with TraceId: {TraceId}", props)
+				props["ServiceName"] = SERVICE_NOTIFICATION
+				props["SourceContext"] = "AlertDispatcher"
+				logger.Warning("WithdrawalWorkflow 因帳戶凍結而終止 for {UserId} with TraceId: {TraceId}", props)
 
 				time.Sleep(2 * time.Second)
 				continue
@@ -738,7 +831,10 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				"RequestedAt":      time.Now().UTC(),
 			}
 
+			// WalletService.WithdrawalRequestHandler
 			props := copyMap(baseContext)
+			props["ServiceName"] = SERVICE_WALLET
+			props["SourceContext"] = "WithdrawalRequestHandler"
 			props["WorkflowStep"] = "1-RequestWithdrawal"
 			props["EventType"] = "WithdrawalRequested"
 			props["WithdrawalRequest"] = withdrawalRequest
@@ -747,21 +843,23 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 			props["WithdrawalMethod"] = withdrawalRequest["WithdrawalMethod"]
 			logger.Info("提款請求: {UserId} requests {Amount} {Currency} via {WithdrawalMethod}", props)
 
-			// KYC 未完成警告 (10% 機率)
+			// KYC 未完成警告 (10% 機率) - PlayerService.KYCValidator
 			if randomBool(0.1) {
 				kycWarning := map[string]interface{}{
-					"KYCStatus":        "Incomplete",
-					"MissingDocuments": []string{"ID Verification", "Address Proof"},
+					"KYCStatus":         "Incomplete",
+					"MissingDocuments":  []string{"ID Verification", "Address Proof"},
 					"RequiredForAmount": withdrawalAmount > 1000,
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_PLAYER
+				props["SourceContext"] = "KYCValidator"
 				props["WorkflowStep"] = "1-RequestWithdrawal"
 				props["KYCWarning"] = kycWarning
 				logger.Warning("KYC 警告: {UserId} KYC 未完成，缺少文件，大額提款需要完成 KYC", props)
 			}
 
-			// 超過每日提款限制警告 (8% 機率)
+			// 超過每日提款限制警告 (8% 機率) - RiskService.TransactionLimitChecker
 			if withdrawalAmount > 2000 && randomBool(0.08) {
 				todayWithdrawn := randomInt(1000, 3000)
 				dailyLimitWarning := map[string]interface{}{
@@ -772,6 +870,8 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_RISK
+				props["SourceContext"] = "TransactionLimitChecker"
 				props["WorkflowStep"] = "1-RequestWithdrawal"
 				props["DailyLimitWarning"] = dailyLimitWarning
 				props["RequestedAmount"] = withdrawalAmount
@@ -782,7 +882,7 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 
 			time.Sleep(150 * time.Millisecond)
 
-			// 步驟 2: 風險評估
+			// 步驟 2: 風險評估 (RiskService.RiskAssessmentEngine)
 			riskScore := randomInt(0, 100)
 			var riskLevel string
 			if riskScore < 30 {
@@ -803,6 +903,8 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 			}
 
 			props = copyMap(baseContext)
+			props["ServiceName"] = SERVICE_RISK
+			props["SourceContext"] = "RiskAssessmentEngine"
 			props["WorkflowStep"] = "2-RiskAssessment"
 			props["EventType"] = "RiskAssessed"
 			props["RiskAssessment"] = riskAssessment
@@ -818,7 +920,7 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				logger.Info("風險評估: Score {RiskScore}, Level {RiskLevel}, Passed: {Passed}", props)
 			}
 
-			// 異常交易模式警告 (10% 機率)
+			// 異常交易模式警告 (10% 機率) - RiskService.PatternDetector
 			if randomBool(0.1) {
 				patternWarning := map[string]interface{}{
 					"Pattern":        randomChoice([]string{"FrequentWithdrawals", "LargeAmountAfterDeposit", "UnusualTiming", "NewDevice"}),
@@ -827,6 +929,8 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_RISK
+				props["SourceContext"] = "PatternDetector"
 				props["WorkflowStep"] = "2-RiskAssessment"
 				props["PatternWarning"] = patternWarning
 				props["Pattern"] = patternWarning["Pattern"]
@@ -840,7 +944,7 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 			transactionID := uuid.New().String()
 
 			if riskPassed {
-				// 核准
+				// 核准 (PaymentService.WithdrawalApprover)
 				approvalDetails := map[string]interface{}{
 					"TransactionId":           transactionID,
 					"ApprovedBy":              "AutomatedSystem",
@@ -849,13 +953,15 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_PAYMENT
+				props["SourceContext"] = "WithdrawalApprover"
 				props["WorkflowStep"] = "3-Approval"
 				props["EventType"] = "WithdrawalApproved"
 				props["TransactionId"] = transactionID
 				props["ApprovalDetails"] = approvalDetails
 				logger.Info("提款核准: Transaction {TransactionId}, Estimated completion in 24h", props)
 			} else {
-				// 標記需要人工審核
+				// 標記需要人工審核 (RiskService.ManualReviewQueue)
 				flagDetails := map[string]interface{}{
 					"TransactionId":        transactionID,
 					"Reason":               randomChoice([]string{"HighRiskScore", "UnusualPattern", "LargeAmount", "NewAccount"}),
@@ -865,6 +971,8 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				}
 
 				props = copyMap(baseContext)
+				props["ServiceName"] = SERVICE_RISK
+				props["SourceContext"] = "ManualReviewQueue"
 				props["WorkflowStep"] = "3-FlaggedReview"
 				props["EventType"] = "WithdrawalFlagged"
 				props["TransactionId"] = transactionID
@@ -874,8 +982,11 @@ func runWithdrawalWorkflow(ctx context.Context, logger *SeqLogger) {
 				logger.Warning("提款標記審核: Transaction {TransactionId}, Reason: {Reason}, Reviewer: {ReviewerAssigned}", props)
 			}
 
+			// 完成通知 (NotificationService)
 			props = copyMap(baseContext)
-			logger.Info("✓ WithdrawalWorkflow completed for {UserId} with TraceId: {TraceId}", props)
+			props["ServiceName"] = SERVICE_NOTIFICATION
+			props["SourceContext"] = "WorkflowNotifier"
+			logger.Info("WithdrawalWorkflow completed for {UserId} with TraceId: {TraceId}", props)
 
 			time.Sleep(2 * time.Second)
 		}
