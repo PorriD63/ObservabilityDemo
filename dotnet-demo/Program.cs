@@ -1,5 +1,7 @@
 using Serilog;
 using Serilog.Context;
+using Serilog.Sinks.Grafana.Loki;
+using Serilog.Sinks.Elasticsearch;
 
 // 定義微服務名稱
 const string SERVICE_PLAYER = "PlayerService";
@@ -9,14 +11,29 @@ const string SERVICE_PAYMENT = "PaymentService";
 const string SERVICE_RISK = "RiskService";
 const string SERVICE_NOTIFICATION = "NotificationService";
 
-// 配置 Serilog
+// 配置 Serilog - 多目標輸出: Console, Seq, Loki, Elasticsearch (via Logstash)
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .Enrich.FromLogContext()
     .Enrich.WithProperty("Application", "DotnetSeqDemo")
     .Enrich.WithProperty("Environment", "Demo")
+    // Console 輸出
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{ServiceName}/{SourceContext}] {Message:lj}{NewLine}{Exception}")
+    // Seq 輸出
     .WriteTo.Seq("http://localhost:5341")
+    // Grafana Loki 輸出
+    .WriteTo.GrafanaLoki(
+        "http://localhost:3100",
+        labels: new List<LokiLabel>
+        {
+            new LokiLabel { Key = "app", Value = "DotnetSeqDemo" },
+            new LokiLabel { Key = "environment", Value = "Demo" }
+        },
+        propertiesAsLabels: new[] { "ServiceName", "WorkflowName", "EventType" })
+    // Elasticsearch 輸出 (via Logstash HTTP)
+    .WriteTo.Http(
+        requestUri: "http://localhost:8080",
+        queueLimitBytes: null)
     .CreateLogger();
 
 try
