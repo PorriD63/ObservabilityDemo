@@ -9,7 +9,7 @@ using OpenTelemetry.Trace;
 using OpenTelemetry.Resources;
 
 // 定義微服務名稱
-const string SERVICE_NAME = "DotnetSeqDemo";
+const string SERVICE_GATEWAY = "ApiGateway";
 const string SERVICE_PLAYER = "PlayerService";
 const string SERVICE_GAME = "GameService";
 const string SERVICE_WALLET = "WalletService";
@@ -17,23 +17,36 @@ const string SERVICE_PAYMENT = "PaymentService";
 const string SERVICE_RISK = "RiskService";
 const string SERVICE_NOTIFICATION = "NotificationService";
 
-// 創建 ActivitySource 用於 Tracing
-var activitySource = new ActivitySource(SERVICE_NAME);
+// 創建各微服務的 ActivitySource（每個服務獨立的 trace 來源）
+var gatewaySource = new ActivitySource(SERVICE_GATEWAY);
+var playerSource = new ActivitySource(SERVICE_PLAYER);
+var gameSource = new ActivitySource(SERVICE_GAME);
+var walletSource = new ActivitySource(SERVICE_WALLET);
+var paymentSource = new ActivitySource(SERVICE_PAYMENT);
+var riskSource = new ActivitySource(SERVICE_RISK);
 
-// 配置 OpenTelemetry Tracing
-using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-    .SetResourceBuilder(ResourceBuilder.CreateDefault()
-        .AddService(serviceName: SERVICE_NAME, serviceNamespace: "Demo", serviceVersion: "1.0.0")
-        .AddAttributes(new Dictionary<string, object>
+// 建立各微服務的 TracerProvider（每個服務有獨立的 service.name 資源標籤）
+TracerProvider BuildTracer(string serviceName) =>
+    Sdk.CreateTracerProviderBuilder()
+        .SetResourceBuilder(ResourceBuilder.CreateDefault()
+            .AddService(serviceName: serviceName, serviceNamespace: "Demo", serviceVersion: "1.0.0")
+            .AddAttributes(new Dictionary<string, object>
+            {
+                ["deployment.environment"] = "Demo"
+            }))
+        .AddSource(serviceName)
+        .AddOtlpExporter(options =>
         {
-            ["deployment.environment"] = "Demo"
-        }))
-    .AddSource(SERVICE_NAME)
-    .AddOtlpExporter(options =>
-    {
-        options.Endpoint = new Uri("http://localhost:4317");
-    })
-    .Build();
+            options.Endpoint = new Uri("http://localhost:4317");
+        })
+        .Build();
+
+using var gatewayTracer = BuildTracer(SERVICE_GATEWAY);
+using var playerTracer = BuildTracer(SERVICE_PLAYER);
+using var gameTracer = BuildTracer(SERVICE_GAME);
+using var walletTracer = BuildTracer(SERVICE_WALLET);
+using var paymentTracer = BuildTracer(SERVICE_PAYMENT);
+using var riskTracer = BuildTracer(SERVICE_RISK);
 
 // 配置 Serilog - 透過 OpenTelemetry Collector 統一發送到 Seq, Loki, Elasticsearch
 Log.Logger = new LoggerConfiguration()
@@ -105,20 +118,23 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
             var userId = $"USER_{random.Next(100, 999)}";
             var sessionId = Guid.NewGuid().ToString();
 
-            // 創建 Workflow Span - TraceId 會自動生成並關聯到所有 logs
-            using var workflowActivity = activitySource.StartActivity(workflowName, ActivityKind.Internal);
+            // 創建 Workflow Span（ApiGateway 作為入口） - TraceId 會自動生成並關聯到所有 logs
+            using var workflowActivity = gatewaySource.StartActivity(workflowName, ActivityKind.Server);
             workflowActivity?.SetTag("user.id", userId);
             workflowActivity?.SetTag("session.id", sessionId);
             workflowActivity?.SetTag("workflow.name", workflowName);
+            workflowActivity?.SetTag("http.method", "POST");
+            workflowActivity?.SetTag("http.url", "/api/betting/workflow");
 
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
             using (LogContext.PushProperty("WorkflowName", workflowName))
             {
                 // 步驟 1: 玩家登入 (PlayerService.AuthenticationHandler)
-                using (var stepActivity = activitySource.StartActivity("1-Login", ActivityKind.Internal))
+                using (var stepActivity = playerSource.StartActivity("1-Login", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_PLAYER);
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/player/login");
                     stepActivity?.SetTag("operation", "AuthenticationHandler");
 
                     var loginContext = new
@@ -147,9 +163,10 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 }
 
                 // 步驟 2: 玩家驗證 (PlayerService.AuthorizationHandler)
-                using (var stepActivity = activitySource.StartActivity("2-Authentication", ActivityKind.Internal))
+                using (var stepActivity = playerSource.StartActivity("2-Authentication", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_PLAYER);
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/player/authenticate");
                     stepActivity?.SetTag("operation", "AuthorizationHandler");
 
                     var authDetails = new
@@ -179,9 +196,10 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 // 步驟 3: 查詢餘額 (WalletService.BalanceManager)
                 var currentBalance = random.Next(100, 10000);
                 string balanceCurrency;
-                using (var stepActivity = activitySource.StartActivity("3-BalanceCheck", ActivityKind.Internal))
+                using (var stepActivity = walletSource.StartActivity("3-BalanceCheck", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_WALLET);
+                    stepActivity?.SetTag("http.method", "GET");
+                    stepActivity?.SetTag("http.url", $"/api/wallet/balance/{userId}");
                     stepActivity?.SetTag("operation", "BalanceManager");
 
                     var balanceInfo = new
@@ -221,9 +239,10 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 var gameId = $"GAME_{random.Next(1, 99)}";
                 var tableId = $"TABLE_{random.Next(1, 20)}";
                 string gameType;
-                using (var stepActivity = activitySource.StartActivity("4-GameStart", ActivityKind.Internal))
+                using (var stepActivity = gameSource.StartActivity("4-GameStart", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_GAME);
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/game/start");
                     stepActivity?.SetTag("operation", "GameSessionManager");
 
                     var gameDetails = new
@@ -280,9 +299,10 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 var betAmount = random.Next(10, 500);
                 string betType = "";
 
-                using (var stepActivity = activitySource.StartActivity("5-PlaceBet", ActivityKind.Internal))
+                using (var stepActivity = gameSource.StartActivity("5-PlaceBet", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_GAME);
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/game/bet");
                     stepActivity?.SetTag("bet.id", betId);
 
                     // 檢查餘額是否足夠 (10% 機率不足) - WalletService 驗證
@@ -379,9 +399,10 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
 
                 // 步驟 6: 遊戲結果 (GameService.ResultHandler)
                 string gameResult;
-                using (var stepActivity = activitySource.StartActivity("6-GameResult", ActivityKind.Internal))
+                using (var stepActivity = gameSource.StartActivity("6-GameResult", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_GAME);
+                    stepActivity?.SetTag("http.method", "GET");
+                    stepActivity?.SetTag("http.url", $"/api/game/{gameId}/result");
                     var gameRound = $"ROUND_{random.Next(10000, 99999)}";
                     var resultDetails = new
                     {
@@ -414,9 +435,10 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 var profit = winAmount - betAmount;
                 var transactionId = Guid.NewGuid().ToString();
 
-                using (var stepActivity = activitySource.StartActivity("7-Settlement", ActivityKind.Internal))
+                using (var stepActivity = walletSource.StartActivity("7-Settlement", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_WALLET);
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/wallet/settlement");
                     stepActivity?.SetTag("transaction.id", transactionId);
                     stepActivity?.SetTag("bet.result", isWin ? "Win" : "Loss");
                     stepActivity?.SetTag("bet.profit", profit);
@@ -463,9 +485,10 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 }
 
                 // 步驟 8: 餘額更新 (WalletService.BalanceManager)
-                using (var stepActivity = activitySource.StartActivity("8-BalanceUpdate", ActivityKind.Internal))
+                using (var stepActivity = walletSource.StartActivity("8-BalanceUpdate", ActivityKind.Server))
                 {
-                    stepActivity?.SetTag("service.name", SERVICE_WALLET);
+                    stepActivity?.SetTag("http.method", "PUT");
+                    stepActivity?.SetTag("http.url", $"/api/wallet/balance/{userId}");
                     var newBalance = currentBalance + profit;
                     stepActivity?.SetTag("wallet.previous_balance", currentBalance);
                     stepActivity?.SetTag("wallet.new_balance", newBalance);
@@ -548,11 +571,13 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
             var userId = $"USER_{random.Next(100, 999)}";
             var sessionId = Guid.NewGuid().ToString();
 
-            // 創建 Workflow Span
-            using var workflowActivity = activitySource.StartActivity(workflowName, ActivityKind.Internal);
+            // 創建 Workflow Span（ApiGateway 作為入口）
+            using var workflowActivity = gatewaySource.StartActivity(workflowName, ActivityKind.Server);
             workflowActivity?.SetTag("user.id", userId);
             workflowActivity?.SetTag("session.id", sessionId);
             workflowActivity?.SetTag("workflow.name", workflowName);
+            workflowActivity?.SetTag("http.method", "POST");
+            workflowActivity?.SetTag("http.url", "/api/deposit/workflow");
 
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
@@ -568,38 +593,45 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     RequestedAt = DateTime.UtcNow
                 };
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                using (LogContext.PushProperty("SourceContext", "DepositRequestHandler"))
-                using (LogContext.PushProperty("WorkflowStep", "1-InitiateDeposit"))
-                using (LogContext.PushProperty("EventType", "DepositInitiated"))
-                using (LogContext.PushProperty("DepositRequest", depositRequest, destructureObjects: true))
+                using (var stepActivity = walletSource.StartActivity("1-InitiateDeposit", ActivityKind.Server))
                 {
-                    Log.Information("發起存款: {UserId} requests {Amount} {Currency} via {PaymentMethod}",
-                        userId, depositAmount, depositRequest.Currency, depositRequest.PaymentMethod);
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/wallet/deposit");
+                    stepActivity?.SetTag("operation", "DepositRequestHandler");
 
-                    // 金額超過限制警告 (15% 機率) - RiskService 檢查
-                    if (depositAmount > 3000 && random.Next(0, 100) < 15)
+                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                    using (LogContext.PushProperty("SourceContext", "DepositRequestHandler"))
+                    using (LogContext.PushProperty("WorkflowStep", "1-InitiateDeposit"))
+                    using (LogContext.PushProperty("EventType", "DepositInitiated"))
+                    using (LogContext.PushProperty("DepositRequest", depositRequest, destructureObjects: true))
                     {
-                        using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
-                        using (LogContext.PushProperty("SourceContext", "TransactionLimitChecker"))
+                        Log.Information("發起存款: {UserId} requests {Amount} {Currency} via {PaymentMethod}",
+                            userId, depositAmount, depositRequest.Currency, depositRequest.PaymentMethod);
+
+                        // 金額超過限制警告 (15% 機率) - RiskService 檢查
+                        if (depositAmount > 3000 && random.Next(0, 100) < 15)
                         {
-                            var limitWarning = new
+                            using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                            using (LogContext.PushProperty("SourceContext", "TransactionLimitChecker"))
                             {
-                                Amount = depositAmount,
-                                DailyLimit = 10000,
-                                SingleTransactionLimit = 5000,
-                                RequiresAdditionalVerification = depositAmount > 5000
-                            };
-                            using (LogContext.PushProperty("LimitWarning", limitWarning, destructureObjects: true))
-                            {
-                                Log.Warning("存款金額警告: {UserId} 存款 {Amount} 接近限額，需要額外驗證: {RequiresAdditionalVerification}",
-                                    userId, depositAmount, limitWarning.RequiresAdditionalVerification);
+                                var limitWarning = new
+                                {
+                                    Amount = depositAmount,
+                                    DailyLimit = 10000,
+                                    SingleTransactionLimit = 5000,
+                                    RequiresAdditionalVerification = depositAmount > 5000
+                                };
+                                using (LogContext.PushProperty("LimitWarning", limitWarning, destructureObjects: true))
+                                {
+                                    Log.Warning("存款金額警告: {UserId} 存款 {Amount} 接近限額，需要額外驗證: {RequiresAdditionalVerification}",
+                                        userId, depositAmount, limitWarning.RequiresAdditionalVerification);
+                                }
                             }
                         }
                     }
-                }
 
-                await Task.Delay(100, cancellationToken);
+                    await Task.Delay(100, cancellationToken);
+                }
 
                 // 步驟 2: 驗證支付方式 (PaymentService.PaymentValidator)
                 var isValidationSuccess = random.Next(0, 100) > 5; // 95% 成功率
@@ -612,117 +644,148 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     FailureReason = isValidationSuccess ? null : new[] { "KYC_NOT_VERIFIED", "PAYMENT_METHOD_SUSPENDED", "ACCOUNT_RESTRICTED" }[random.Next(3)]
                 };
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
-                using (LogContext.PushProperty("SourceContext", "PaymentValidator"))
-                using (LogContext.PushProperty("WorkflowStep", "2-ValidatePayment"))
-                using (LogContext.PushProperty("EventType", isValidationSuccess ? "PaymentValidated" : "PaymentValidationFailed"))
-                using (LogContext.PushProperty("ValidationDetails", validationDetails, destructureObjects: true))
+                using (var stepActivity = paymentSource.StartActivity("2-ValidatePayment", ActivityKind.Server))
                 {
-                    if (isValidationSuccess)
-                    {
-                        Log.Information("驗證支付方式: {PaymentMethod} is valid, Processor: {ProcessorId}",
-                            depositRequest.PaymentMethod, validationDetails.ProcessorId);
-                    }
-                    else
-                    {
-                        Log.Error("驗證失敗: {UserId} 的支付方式 {PaymentMethod} 驗證失敗，原因: {FailureReason}",
-                            userId, depositRequest.PaymentMethod, validationDetails.FailureReason);
-                    }
-                }
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/payment/validate");
+                    stepActivity?.SetTag("operation", "PaymentValidator");
 
-                if (!isValidationSuccess)
-                {
-                    // 發送通知 (NotificationService)
-                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
-                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                    using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                    using (LogContext.PushProperty("SourceContext", "PaymentValidator"))
+                    using (LogContext.PushProperty("WorkflowStep", "2-ValidatePayment"))
+                    using (LogContext.PushProperty("EventType", isValidationSuccess ? "PaymentValidated" : "PaymentValidationFailed"))
+                    using (LogContext.PushProperty("ValidationDetails", validationDetails, destructureObjects: true))
                     {
-                        Log.Warning("DepositWorkflow 因驗證失敗而終止 for {UserId}", userId);
+                        if (isValidationSuccess)
+                        {
+                            Log.Information("驗證支付方式: {PaymentMethod} is valid, Processor: {ProcessorId}",
+                                depositRequest.PaymentMethod, validationDetails.ProcessorId);
+                            stepActivity?.SetTag("http.status_code", 200);
+                        }
+                        else
+                        {
+                            stepActivity?.SetStatus(ActivityStatusCode.Error, "Payment validation failed");
+                            stepActivity?.SetTag("http.status_code", 400);
+                            Log.Error("驗證失敗: {UserId} 的支付方式 {PaymentMethod} 驗證失敗，原因: {FailureReason}",
+                                userId, depositRequest.PaymentMethod, validationDetails.FailureReason);
+                        }
                     }
-                    await Task.Delay(2000, cancellationToken);
-                    continue;
-                }
 
-                await Task.Delay(200, cancellationToken);
+                    if (!isValidationSuccess)
+                    {
+                        // 發送通知 (NotificationService)
+                        using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                        using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                        {
+                            Log.Warning("DepositWorkflow 因驗證失敗而終止 for {UserId}", userId);
+                        }
+                        workflowActivity?.SetStatus(ActivityStatusCode.Error, "Payment validation failed");
+                        await Task.Delay(2000, cancellationToken);
+                        continue;
+                    }
+
+                    await Task.Delay(200, cancellationToken);
+                }
 
                 // 步驟 3: 處理支付 (PaymentService.PaymentProcessor)
                 var transactionId = Guid.NewGuid().ToString();
                 var isSuccess = random.Next(0, 10) > 0; // 90% 成功率
                 var fee = depositAmount * 0.02m; // 2% 手續費
 
-                // 支付處理器連線問題 (8% 機率)
-                if (random.Next(0, 100) < 8)
+                using (var stepActivity = paymentSource.StartActivity("3-ProcessPayment", ActivityKind.Server))
                 {
-                    var connectionError = new
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/payment/process");
+                    stepActivity?.SetTag("operation", "PaymentProcessor");
+                    stepActivity?.SetTag("transaction.id", transactionId);
+
+                    // 支付處理器連線問題 (8% 機率)
+                    if (random.Next(0, 100) < 8)
                     {
-                        ProcessorId = validationDetails.ProcessorId,
-                        ErrorType = "ConnectionTimeout",
-                        RetryCount = random.Next(1, 4),
-                        Timestamp = DateTime.UtcNow
-                    };
-                    using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
-                    using (LogContext.PushProperty("SourceContext", "PaymentGatewayClient"))
-                    using (LogContext.PushProperty("WorkflowStep", "3-ProcessPayment"))
-                    using (LogContext.PushProperty("EventType", "PaymentProcessorConnectionError"))
-                    using (LogContext.PushProperty("TransactionId", transactionId))
-                    using (LogContext.PushProperty("ConnectionError", connectionError, destructureObjects: true))
-                    {
-                        Log.Warning("支付處理器連線問題: Processor {ProcessorId} 連線超時，重試次數: {RetryCount}",
-                            validationDetails.ProcessorId, connectionError.RetryCount);
+                        var connectionError = new
+                        {
+                            ProcessorId = validationDetails.ProcessorId,
+                            ErrorType = "ConnectionTimeout",
+                            RetryCount = random.Next(1, 4),
+                            Timestamp = DateTime.UtcNow
+                        };
+                        using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                        using (LogContext.PushProperty("SourceContext", "PaymentGatewayClient"))
+                        using (LogContext.PushProperty("WorkflowStep", "3-ProcessPayment"))
+                        using (LogContext.PushProperty("EventType", "PaymentProcessorConnectionError"))
+                        using (LogContext.PushProperty("TransactionId", transactionId))
+                        using (LogContext.PushProperty("ConnectionError", connectionError, destructureObjects: true))
+                        {
+                            Log.Warning("支付處理器連線問題: Processor {ProcessorId} 連線超時，重試次數: {RetryCount}",
+                                validationDetails.ProcessorId, connectionError.RetryCount);
+                        }
                     }
-                }
 
-                var paymentDetails = new
-                {
-                    TransactionId = transactionId,
-                    Status = isSuccess ? "Success" : "Failed",
-                    Amount = depositAmount,
-                    Fee = fee,
-                    NetAmount = depositAmount - (decimal)fee,
-                    ProcessedAt = DateTime.UtcNow,
-                    ErrorCode = isSuccess ? null : new[] { "INSUFFICIENT_FUNDS", "CARD_DECLINED", "BANK_REJECTION", "FRAUD_DETECTED" }[random.Next(4)]
-                };
+                    var paymentDetails = new
+                    {
+                        TransactionId = transactionId,
+                        Status = isSuccess ? "Success" : "Failed",
+                        Amount = depositAmount,
+                        Fee = fee,
+                        NetAmount = depositAmount - (decimal)fee,
+                        ProcessedAt = DateTime.UtcNow,
+                        ErrorCode = isSuccess ? null : new[] { "INSUFFICIENT_FUNDS", "CARD_DECLINED", "BANK_REJECTION", "FRAUD_DETECTED" }[random.Next(4)]
+                    };
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
-                using (LogContext.PushProperty("SourceContext", "PaymentProcessor"))
-                using (LogContext.PushProperty("WorkflowStep", "3-ProcessPayment"))
-                using (LogContext.PushProperty("EventType", isSuccess ? "PaymentProcessed" : "PaymentFailed"))
-                using (LogContext.PushProperty("TransactionId", transactionId))
-                using (LogContext.PushProperty("PaymentDetails", paymentDetails, destructureObjects: true))
-                {
+                    using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                    using (LogContext.PushProperty("SourceContext", "PaymentProcessor"))
+                    using (LogContext.PushProperty("WorkflowStep", "3-ProcessPayment"))
+                    using (LogContext.PushProperty("EventType", isSuccess ? "PaymentProcessed" : "PaymentFailed"))
+                    using (LogContext.PushProperty("TransactionId", transactionId))
+                    using (LogContext.PushProperty("PaymentDetails", paymentDetails, destructureObjects: true))
+                    {
+                        if (isSuccess)
+                        {
+                            stepActivity?.SetTag("http.status_code", 200);
+                            Log.Information("處理支付成功: Transaction {TransactionId}, Amount: {Amount}, Fee: {Fee}",
+                                transactionId, depositAmount, fee);
+                        }
+                        else
+                        {
+                            stepActivity?.SetStatus(ActivityStatusCode.Error, "Payment processing failed");
+                            stepActivity?.SetTag("http.status_code", 500);
+                            Log.Error("處理支付失敗: Transaction {TransactionId}, Error: {ErrorCode}",
+                                transactionId, paymentDetails.ErrorCode);
+                        }
+                    }
+
+                    await Task.Delay(100, cancellationToken);
+
+                    // 步驟 4: 餘額入帳 (WalletService.BalanceManager) - 僅在成功時
                     if (isSuccess)
                     {
-                        Log.Information("處理支付成功: Transaction {TransactionId}, Amount: {Amount}, Fee: {Fee}",
-                            transactionId, depositAmount, fee);
-                    }
-                    else
-                    {
-                        Log.Error("處理支付失敗: Transaction {TransactionId}, Error: {ErrorCode}",
-                            transactionId, paymentDetails.ErrorCode);
-                    }
-                }
+                        using (var creditActivity = walletSource.StartActivity("4-CreditBalance", ActivityKind.Server))
+                        {
+                            creditActivity?.SetTag("http.method", "PUT");
+                            creditActivity?.SetTag("http.url", $"/api/wallet/balance/{userId}/credit");
+                            creditActivity?.SetTag("operation", "BalanceManager");
 
-                await Task.Delay(100, cancellationToken);
+                            var newBalance = random.Next(1000, 20000);
+                            var creditDetails = new
+                            {
+                                Amount = paymentDetails.NetAmount,
+                                TransactionId = transactionId,
+                                NewBalance = newBalance,
+                                CreditedAt = DateTime.UtcNow
+                            };
 
-                // 步驟 4: 餘額入帳 (WalletService.BalanceManager) - 僅在成功時
-                if (isSuccess)
-                {
-                    var newBalance = random.Next(1000, 20000);
-                    var creditDetails = new
-                    {
-                        Amount = paymentDetails.NetAmount,
-                        TransactionId = transactionId,
-                        NewBalance = newBalance,
-                        CreditedAt = DateTime.UtcNow
-                    };
+                            creditActivity?.SetTag("wallet.new_balance", newBalance);
 
-                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                    using (LogContext.PushProperty("SourceContext", "BalanceManager"))
-                    using (LogContext.PushProperty("WorkflowStep", "4-CreditBalance"))
-                    using (LogContext.PushProperty("EventType", "BalanceCredited"))
-                    using (LogContext.PushProperty("CreditDetails", creditDetails, destructureObjects: true))
-                    {
-                        Log.Information("餘額入帳: {Amount} credited, New Balance: {NewBalance}",
-                            creditDetails.Amount, newBalance);
+                            using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                            using (LogContext.PushProperty("SourceContext", "BalanceManager"))
+                            using (LogContext.PushProperty("WorkflowStep", "4-CreditBalance"))
+                            using (LogContext.PushProperty("EventType", "BalanceCredited"))
+                            using (LogContext.PushProperty("CreditDetails", creditDetails, destructureObjects: true))
+                            {
+                                Log.Information("餘額入帳: {Amount} credited, New Balance: {NewBalance}",
+                                    creditDetails.Amount, newBalance);
+                            }
+                        }
                     }
                 }
 
@@ -764,11 +827,13 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
             var userId = $"USER_{random.Next(100, 999)}";
             var sessionId = Guid.NewGuid().ToString();
 
-            // 創建 Workflow Span
-            using var workflowActivity = activitySource.StartActivity(workflowName, ActivityKind.Internal);
+            // 創建 Workflow Span（ApiGateway 作為入口）
+            using var workflowActivity = gatewaySource.StartActivity(workflowName, ActivityKind.Server);
             workflowActivity?.SetTag("user.id", userId);
             workflowActivity?.SetTag("session.id", sessionId);
             workflowActivity?.SetTag("workflow.name", workflowName);
+            workflowActivity?.SetTag("http.method", "POST");
+            workflowActivity?.SetTag("http.url", "/api/withdrawal/workflow");
 
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
@@ -778,187 +843,211 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                 var withdrawalAmount = random.Next(100, 3000);
                 var userBalance = random.Next(0, 5000);
 
-                // 餘額不足錯誤 (12% 機率) - WalletService.BalanceValidator
-                if (userBalance < withdrawalAmount && random.Next(0, 100) < 12)
+                using (var stepActivity = walletSource.StartActivity("1-RequestWithdrawal", ActivityKind.Server))
                 {
-                    var insufficientBalanceError = new
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/wallet/withdrawal");
+                    stepActivity?.SetTag("operation", "WithdrawalRequestHandler");
+
+                    // 餘額不足錯誤 (12% 機率) - WalletService.BalanceValidator
+                    if (userBalance < withdrawalAmount && random.Next(0, 100) < 12)
                     {
-                        RequestedAmount = withdrawalAmount,
-                        AvailableBalance = userBalance,
-                        Shortage = withdrawalAmount - userBalance,
-                        Currency = new[] { "USD", "TWD", "HKD", "SGD" }[random.Next(4)]
+                        var insufficientBalanceError = new
+                        {
+                            RequestedAmount = withdrawalAmount,
+                            AvailableBalance = userBalance,
+                            Shortage = withdrawalAmount - userBalance,
+                            Currency = new[] { "USD", "TWD", "HKD", "SGD" }[random.Next(4)]
+                        };
+
+                        stepActivity?.SetStatus(ActivityStatusCode.Error, "Insufficient balance");
+                        stepActivity?.SetTag("http.status_code", 400);
+
+                        using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                        using (LogContext.PushProperty("SourceContext", "BalanceValidator"))
+                        using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
+                        using (LogContext.PushProperty("EventType", "WithdrawalRejectedInsufficientBalance"))
+                        using (LogContext.PushProperty("InsufficientBalanceError", insufficientBalanceError, destructureObjects: true))
+                        {
+                            Log.Error("提款失敗 - 餘額不足: {UserId} 請求提款 {RequestedAmount}，但餘額僅 {AvailableBalance}",
+                                userId, withdrawalAmount, userBalance);
+                        }
+
+                        // 發送通知 (NotificationService)
+                        using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                        using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                        {
+                            Log.Warning("WithdrawalWorkflow 因餘額不足而終止 for {UserId}", userId);
+                        }
+                        workflowActivity?.SetStatus(ActivityStatusCode.Error, "Insufficient balance");
+                        await Task.Delay(2000, cancellationToken);
+                        continue;
+                    }
+
+                    // 帳戶凍結錯誤 (5% 機率) - RiskService.AccountStatusChecker
+                    if (random.Next(0, 100) < 5)
+                    {
+                        var accountFrozenError = new
+                        {
+                            Reason = new[] { "SUSPECTED_FRAUD", "PENDING_INVESTIGATION", "COMPLIANCE_HOLD", "DUPLICATE_ACCOUNT" }[random.Next(4)],
+                            FrozenSince = DateTime.UtcNow.AddDays(-random.Next(1, 30)),
+                            ContactSupport = true
+                        };
+
+                        stepActivity?.SetStatus(ActivityStatusCode.Error, "Account frozen");
+                        stepActivity?.SetTag("http.status_code", 403);
+
+                        using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                        using (LogContext.PushProperty("SourceContext", "AccountStatusChecker"))
+                        using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
+                        using (LogContext.PushProperty("EventType", "WithdrawalRejectedAccountFrozen"))
+                        using (LogContext.PushProperty("AccountFrozenError", accountFrozenError, destructureObjects: true))
+                        {
+                            Log.Error("提款失敗 - 帳戶凍結: {UserId} 帳戶已凍結，原因: {Reason}",
+                                userId, accountFrozenError.Reason);
+                        }
+
+                        // 發送通知 (NotificationService)
+                        using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                        using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                        {
+                            Log.Warning("WithdrawalWorkflow 因帳戶凍結而終止 for {UserId}", userId);
+                        }
+                        workflowActivity?.SetStatus(ActivityStatusCode.Error, "Account frozen");
+                        await Task.Delay(2000, cancellationToken);
+                        continue;
+                    }
+
+                    var withdrawalRequest = new
+                    {
+                        Amount = withdrawalAmount,
+                        Currency = new[] { "USD", "TWD", "HKD", "SGD" }[random.Next(4)],
+                        WithdrawalMethod = new[] { "BankTransfer", "EWallet", "Crypto", "Check" }[random.Next(4)],
+                        AccountInfo = $"****{random.Next(1000, 9999)}",
+                        RequestedAt = DateTime.UtcNow
                     };
 
                     using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                    using (LogContext.PushProperty("SourceContext", "BalanceValidator"))
+                    using (LogContext.PushProperty("SourceContext", "WithdrawalRequestHandler"))
                     using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
-                    using (LogContext.PushProperty("EventType", "WithdrawalRejectedInsufficientBalance"))
-                    using (LogContext.PushProperty("InsufficientBalanceError", insufficientBalanceError, destructureObjects: true))
+                    using (LogContext.PushProperty("EventType", "WithdrawalRequested"))
+                    using (LogContext.PushProperty("WithdrawalRequest", withdrawalRequest, destructureObjects: true))
                     {
-                        Log.Error("提款失敗 - 餘額不足: {UserId} 請求提款 {RequestedAmount}，但餘額僅 {AvailableBalance}",
-                            userId, withdrawalAmount, userBalance);
+                        Log.Information("提款請求: {UserId} requests {Amount} {Currency} via {WithdrawalMethod}",
+                            userId, withdrawalAmount, withdrawalRequest.Currency, withdrawalRequest.WithdrawalMethod);
                     }
 
-                    // 發送通知 (NotificationService)
-                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
-                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                    // KYC 未完成警告 (10% 機率) - PlayerService.KYCValidator
+                    if (random.Next(0, 10) == 0)
                     {
-                        Log.Warning("WithdrawalWorkflow 因餘額不足而終止 for {UserId}", userId);
+                        var kycWarning = new
+                        {
+                            KYCStatus = "Incomplete",
+                            MissingDocuments = new[] { "ID Verification", "Address Proof" },
+                            RequiredForAmount = withdrawalAmount > 1000
+                        };
+                        using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
+                        using (LogContext.PushProperty("SourceContext", "KYCValidator"))
+                        using (LogContext.PushProperty("KYCWarning", kycWarning, destructureObjects: true))
+                        {
+                            Log.Warning("KYC 警告: {UserId} KYC 未完成，缺少文件，大額提款需要完成 KYC",
+                                userId);
+                        }
                     }
-                    await Task.Delay(2000, cancellationToken);
-                    continue;
+
+                    // 超過每日提款限制警告 (8% 機率) - RiskService.TransactionLimitChecker
+                    if (withdrawalAmount > 2000 && random.Next(0, 100) < 8)
+                    {
+                        var dailyLimitWarning = new
+                        {
+                            RequestedAmount = withdrawalAmount,
+                            DailyLimit = 5000,
+                            TodayWithdrawn = random.Next(1000, 3000),
+                            RemainingLimit = 5000 - random.Next(1000, 3000)
+                        };
+                        using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                        using (LogContext.PushProperty("SourceContext", "TransactionLimitChecker"))
+                        using (LogContext.PushProperty("DailyLimitWarning", dailyLimitWarning, destructureObjects: true))
+                        {
+                            Log.Warning("每日提款限額警告: {UserId} 請求 {RequestedAmount}，今日已提款 {TodayWithdrawn}，剩餘額度 {RemainingLimit}",
+                                userId, withdrawalAmount, dailyLimitWarning.TodayWithdrawn, dailyLimitWarning.RemainingLimit);
+                        }
+                    }
+
+                    await Task.Delay(150, cancellationToken);
                 }
-
-                // 帳戶凍結錯誤 (5% 機率) - RiskService.AccountStatusChecker
-                if (random.Next(0, 100) < 5)
-                {
-                    var accountFrozenError = new
-                    {
-                        Reason = new[] { "SUSPECTED_FRAUD", "PENDING_INVESTIGATION", "COMPLIANCE_HOLD", "DUPLICATE_ACCOUNT" }[random.Next(4)],
-                        FrozenSince = DateTime.UtcNow.AddDays(-random.Next(1, 30)),
-                        ContactSupport = true
-                    };
-
-                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
-                    using (LogContext.PushProperty("SourceContext", "AccountStatusChecker"))
-                    using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
-                    using (LogContext.PushProperty("EventType", "WithdrawalRejectedAccountFrozen"))
-                    using (LogContext.PushProperty("AccountFrozenError", accountFrozenError, destructureObjects: true))
-                    {
-                        Log.Error("提款失敗 - 帳戶凍結: {UserId} 帳戶已凍結，原因: {Reason}",
-                            userId, accountFrozenError.Reason);
-                    }
-
-                    // 發送通知 (NotificationService)
-                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
-                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
-                    {
-                        Log.Warning("WithdrawalWorkflow 因帳戶凍結而終止 for {UserId}", userId);
-                    }
-                    await Task.Delay(2000, cancellationToken);
-                    continue;
-                }
-
-                var withdrawalRequest = new
-                {
-                    Amount = withdrawalAmount,
-                    Currency = new[] { "USD", "TWD", "HKD", "SGD" }[random.Next(4)],
-                    WithdrawalMethod = new[] { "BankTransfer", "EWallet", "Crypto", "Check" }[random.Next(4)],
-                    AccountInfo = $"****{random.Next(1000, 9999)}",
-                    RequestedAt = DateTime.UtcNow
-                };
-
-                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                using (LogContext.PushProperty("SourceContext", "WithdrawalRequestHandler"))
-                using (LogContext.PushProperty("WorkflowStep", "1-RequestWithdrawal"))
-                using (LogContext.PushProperty("EventType", "WithdrawalRequested"))
-                using (LogContext.PushProperty("WithdrawalRequest", withdrawalRequest, destructureObjects: true))
-                {
-                    Log.Information("提款請求: {UserId} requests {Amount} {Currency} via {WithdrawalMethod}",
-                        userId, withdrawalAmount, withdrawalRequest.Currency, withdrawalRequest.WithdrawalMethod);
-                }
-
-                // KYC 未完成警告 (10% 機率) - PlayerService.KYCValidator
-                if (random.Next(0, 10) == 0)
-                {
-                    var kycWarning = new
-                    {
-                        KYCStatus = "Incomplete",
-                        MissingDocuments = new[] { "ID Verification", "Address Proof" },
-                        RequiredForAmount = withdrawalAmount > 1000
-                    };
-                    using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
-                    using (LogContext.PushProperty("SourceContext", "KYCValidator"))
-                    using (LogContext.PushProperty("KYCWarning", kycWarning, destructureObjects: true))
-                    {
-                        Log.Warning("KYC 警告: {UserId} KYC 未完成，缺少文件，大額提款需要完成 KYC",
-                            userId);
-                    }
-                }
-
-                // 超過每日提款限制警告 (8% 機率) - RiskService.TransactionLimitChecker
-                if (withdrawalAmount > 2000 && random.Next(0, 100) < 8)
-                {
-                    var dailyLimitWarning = new
-                    {
-                        RequestedAmount = withdrawalAmount,
-                        DailyLimit = 5000,
-                        TodayWithdrawn = random.Next(1000, 3000),
-                        RemainingLimit = 5000 - random.Next(1000, 3000)
-                    };
-                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
-                    using (LogContext.PushProperty("SourceContext", "TransactionLimitChecker"))
-                    using (LogContext.PushProperty("DailyLimitWarning", dailyLimitWarning, destructureObjects: true))
-                    {
-                        Log.Warning("每日提款限額警告: {UserId} 請求 {RequestedAmount}，今日已提款 {TodayWithdrawn}，剩餘額度 {RemainingLimit}",
-                            userId, withdrawalAmount, dailyLimitWarning.TodayWithdrawn, dailyLimitWarning.RemainingLimit);
-                    }
-                }
-
-                await Task.Delay(150, cancellationToken);
 
                 // 步驟 2: 風險評估 (RiskService.RiskAssessmentEngine)
                 var riskScore = random.Next(0, 100);
                 var riskLevel = riskScore < 30 ? "Low" : riskScore < 70 ? "Medium" : "High";
                 var riskPassed = riskScore < 70;
 
-                var riskAssessment = new
+                using (var stepActivity = riskSource.StartActivity("2-RiskAssessment", ActivityKind.Server))
                 {
-                    RiskScore = riskScore,
-                    RiskLevel = riskLevel,
-                    Passed = riskPassed,
-                    Factors = new[]
-                    {
-                        "TransactionHistory",
-                        "AccountAge",
-                        "WithdrawalFrequency",
-                        "DepositWithdrawalRatio"
-                    },
-                    AssessedAt = DateTime.UtcNow
-                };
+                    stepActivity?.SetTag("http.method", "POST");
+                    stepActivity?.SetTag("http.url", "/api/risk/assess");
+                    stepActivity?.SetTag("operation", "RiskAssessmentEngine");
+                    stepActivity?.SetTag("risk.score", riskScore);
+                    stepActivity?.SetTag("risk.level", riskLevel);
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
-                using (LogContext.PushProperty("SourceContext", "RiskAssessmentEngine"))
-                using (LogContext.PushProperty("WorkflowStep", "2-RiskAssessment"))
-                using (LogContext.PushProperty("EventType", "RiskAssessed"))
-                using (LogContext.PushProperty("RiskAssessment", riskAssessment, destructureObjects: true))
-                {
-                    if (riskLevel == "High")
+                    var riskAssessment = new
                     {
-                        Log.Warning("高風險提款: Score {RiskScore}, Level {RiskLevel}, 需要人工審核",
-                            riskScore, riskLevel);
-                    }
-                    else if (riskLevel == "Medium")
-                    {
-                        Log.Warning("中風險提款: Score {RiskScore}, Level {RiskLevel}, Passed: {Passed}",
-                            riskScore, riskLevel, riskPassed);
-                    }
-                    else
-                    {
-                        Log.Information("風險評估: Score {RiskScore}, Level {RiskLevel}, Passed: {Passed}",
-                            riskScore, riskLevel, riskPassed);
-                    }
-                }
-
-                // 異常交易模式警告 (10% 機率) - RiskService.PatternDetector
-                if (random.Next(0, 10) == 0)
-                {
-                    var patternWarning = new
-                    {
-                        Pattern = new[] { "FrequentWithdrawals", "LargeAmountAfterDeposit", "UnusualTiming", "NewDevice" }[random.Next(4)],
-                        Confidence = random.Next(60, 95),
-                        RequiresReview = true
+                        RiskScore = riskScore,
+                        RiskLevel = riskLevel,
+                        Passed = riskPassed,
+                        Factors = new[]
+                        {
+                            "TransactionHistory",
+                            "AccountAge",
+                            "WithdrawalFrequency",
+                            "DepositWithdrawalRatio"
+                        },
+                        AssessedAt = DateTime.UtcNow
                     };
-                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
-                    using (LogContext.PushProperty("SourceContext", "PatternDetector"))
-                    using (LogContext.PushProperty("PatternWarning", patternWarning, destructureObjects: true))
-                    {
-                        Log.Warning("異常交易模式: {UserId} 偵測到 {Pattern}，信心度: {Confidence}%",
-                            userId, patternWarning.Pattern, patternWarning.Confidence);
-                    }
-                }
 
-                await Task.Delay(200, cancellationToken);
+                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                    using (LogContext.PushProperty("SourceContext", "RiskAssessmentEngine"))
+                    using (LogContext.PushProperty("WorkflowStep", "2-RiskAssessment"))
+                    using (LogContext.PushProperty("EventType", "RiskAssessed"))
+                    using (LogContext.PushProperty("RiskAssessment", riskAssessment, destructureObjects: true))
+                    {
+                        if (riskLevel == "High")
+                        {
+                            Log.Warning("高風險提款: Score {RiskScore}, Level {RiskLevel}, 需要人工審核",
+                                riskScore, riskLevel);
+                        }
+                        else if (riskLevel == "Medium")
+                        {
+                            Log.Warning("中風險提款: Score {RiskScore}, Level {RiskLevel}, Passed: {Passed}",
+                                riskScore, riskLevel, riskPassed);
+                        }
+                        else
+                        {
+                            Log.Information("風險評估: Score {RiskScore}, Level {RiskLevel}, Passed: {Passed}",
+                                riskScore, riskLevel, riskPassed);
+                        }
+                    }
+
+                    // 異常交易模式警告 (10% 機率) - RiskService.PatternDetector
+                    if (random.Next(0, 10) == 0)
+                    {
+                        var patternWarning = new
+                        {
+                            Pattern = new[] { "FrequentWithdrawals", "LargeAmountAfterDeposit", "UnusualTiming", "NewDevice" }[random.Next(4)],
+                            Confidence = random.Next(60, 95),
+                            RequiresReview = true
+                        };
+                        using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                        using (LogContext.PushProperty("SourceContext", "PatternDetector"))
+                        using (LogContext.PushProperty("PatternWarning", patternWarning, destructureObjects: true))
+                        {
+                            Log.Warning("異常交易模式: {UserId} 偵測到 {Pattern}，信心度: {Confidence}%",
+                                userId, patternWarning.Pattern, patternWarning.Confidence);
+                        }
+                    }
+
+                    await Task.Delay(200, cancellationToken);
+                }
 
                 // 步驟 3: 核准或標記
                 var transactionId = Guid.NewGuid().ToString();
@@ -966,46 +1055,66 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                 if (riskPassed)
                 {
                     // 核准 (PaymentService.WithdrawalApprover)
-                    var approvalDetails = new
+                    using (var stepActivity = paymentSource.StartActivity("3-Approval", ActivityKind.Server))
                     {
-                        TransactionId = transactionId,
-                        ApprovedBy = "AutomatedSystem",
-                        ApprovedAt = DateTime.UtcNow,
-                        EstimatedCompletionTime = DateTime.UtcNow.AddHours(24)
-                    };
+                        stepActivity?.SetTag("http.method", "POST");
+                        stepActivity?.SetTag("http.url", "/api/payment/withdrawal/approve");
+                        stepActivity?.SetTag("operation", "WithdrawalApprover");
+                        stepActivity?.SetTag("transaction.id", transactionId);
 
-                    using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
-                    using (LogContext.PushProperty("SourceContext", "WithdrawalApprover"))
-                    using (LogContext.PushProperty("WorkflowStep", "3-Approval"))
-                    using (LogContext.PushProperty("EventType", "WithdrawalApproved"))
-                    using (LogContext.PushProperty("TransactionId", transactionId))
-                    using (LogContext.PushProperty("ApprovalDetails", approvalDetails, destructureObjects: true))
-                    {
-                        Log.Information("提款核准: Transaction {TransactionId}, Estimated completion in 24h",
-                            transactionId);
+                        var approvalDetails = new
+                        {
+                            TransactionId = transactionId,
+                            ApprovedBy = "AutomatedSystem",
+                            ApprovedAt = DateTime.UtcNow,
+                            EstimatedCompletionTime = DateTime.UtcNow.AddHours(24)
+                        };
+
+                        using (LogContext.PushProperty("ServiceName", SERVICE_PAYMENT))
+                        using (LogContext.PushProperty("SourceContext", "WithdrawalApprover"))
+                        using (LogContext.PushProperty("WorkflowStep", "3-Approval"))
+                        using (LogContext.PushProperty("EventType", "WithdrawalApproved"))
+                        using (LogContext.PushProperty("TransactionId", transactionId))
+                        using (LogContext.PushProperty("ApprovalDetails", approvalDetails, destructureObjects: true))
+                        {
+                            Log.Information("提款核准: Transaction {TransactionId}, Estimated completion in 24h",
+                                transactionId);
+                        }
+
+                        await Task.Delay(100, cancellationToken);
                     }
                 }
                 else
                 {
                     // 標記需要人工審核 (RiskService.ManualReviewQueue)
-                    var flagDetails = new
+                    using (var stepActivity = riskSource.StartActivity("3-FlaggedReview", ActivityKind.Server))
                     {
-                        TransactionId = transactionId,
-                        Reason = new[] { "HighRiskScore", "UnusualPattern", "LargeAmount", "NewAccount" }[random.Next(4)],
-                        RequiresManualReview = true,
-                        FlaggedAt = DateTime.UtcNow,
-                        ReviewerAssigned = $"REVIEWER_{random.Next(1, 10)}"
-                    };
+                        stepActivity?.SetTag("http.method", "POST");
+                        stepActivity?.SetTag("http.url", "/api/risk/review/flag");
+                        stepActivity?.SetTag("operation", "ManualReviewQueue");
+                        stepActivity?.SetTag("transaction.id", transactionId);
 
-                    using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
-                    using (LogContext.PushProperty("SourceContext", "ManualReviewQueue"))
-                    using (LogContext.PushProperty("WorkflowStep", "3-FlaggedReview"))
-                    using (LogContext.PushProperty("EventType", "WithdrawalFlagged"))
-                    using (LogContext.PushProperty("TransactionId", transactionId))
-                    using (LogContext.PushProperty("FlagDetails", flagDetails, destructureObjects: true))
-                    {
-                        Log.Warning("提款標記審核: Transaction {TransactionId}, Reason: {Reason}, Reviewer: {ReviewerAssigned}",
-                            transactionId, flagDetails.Reason, flagDetails.ReviewerAssigned);
+                        var flagDetails = new
+                        {
+                            TransactionId = transactionId,
+                            Reason = new[] { "HighRiskScore", "UnusualPattern", "LargeAmount", "NewAccount" }[random.Next(4)],
+                            RequiresManualReview = true,
+                            FlaggedAt = DateTime.UtcNow,
+                            ReviewerAssigned = $"REVIEWER_{random.Next(1, 10)}"
+                        };
+
+                        using (LogContext.PushProperty("ServiceName", SERVICE_RISK))
+                        using (LogContext.PushProperty("SourceContext", "ManualReviewQueue"))
+                        using (LogContext.PushProperty("WorkflowStep", "3-FlaggedReview"))
+                        using (LogContext.PushProperty("EventType", "WithdrawalFlagged"))
+                        using (LogContext.PushProperty("TransactionId", transactionId))
+                        using (LogContext.PushProperty("FlagDetails", flagDetails, destructureObjects: true))
+                        {
+                            Log.Warning("提款標記審核: Transaction {TransactionId}, Reason: {Reason}, Reviewer: {ReviewerAssigned}",
+                                transactionId, flagDetails.Reason, flagDetails.ReviewerAssigned);
+                        }
+
+                        await Task.Delay(100, cancellationToken);
                     }
                 }
 
