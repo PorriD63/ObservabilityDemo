@@ -1,9 +1,15 @@
+using System.Diagnostics;
 using Serilog;
 using Serilog.Context;
-using Serilog.Sinks.Grafana.Loki;
-using Serilog.Sinks.Elasticsearch;
+using Serilog.Core;
+using Serilog.Events;
+using Serilog.Sinks.OpenTelemetry;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Resources;
 
 // 定義微服務名稱
+const string SERVICE_NAME = "DotnetSeqDemo";
 const string SERVICE_PLAYER = "PlayerService";
 const string SERVICE_GAME = "GameService";
 const string SERVICE_WALLET = "WalletService";
@@ -11,29 +17,45 @@ const string SERVICE_PAYMENT = "PaymentService";
 const string SERVICE_RISK = "RiskService";
 const string SERVICE_NOTIFICATION = "NotificationService";
 
-// 配置 Serilog - 多目標輸出: Console, Seq, Loki, Elasticsearch (via Logstash)
+// 創建 ActivitySource 用於 Tracing
+var activitySource = new ActivitySource(SERVICE_NAME);
+
+// 配置 OpenTelemetry Tracing
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService(serviceName: SERVICE_NAME, serviceNamespace: "Demo", serviceVersion: "1.0.0")
+        .AddAttributes(new Dictionary<string, object>
+        {
+            ["deployment.environment"] = "Demo"
+        }))
+    .AddSource(SERVICE_NAME)
+    .AddOtlpExporter(options =>
+    {
+        options.Endpoint = new Uri("http://localhost:4317");
+    })
+    .Build();
+
+// 配置 Serilog - 透過 OpenTelemetry Collector 統一發送到 Seq, Loki, Elasticsearch
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .Enrich.FromLogContext()
     .Enrich.WithProperty("Application", "DotnetSeqDemo")
     .Enrich.WithProperty("Environment", "Demo")
+    .Enrich.With(new ActivityEnricher())  // 自動加入 TraceId, SpanId
     // Console 輸出
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{ServiceName}/{SourceContext}] {Message:lj}{NewLine}{Exception}")
-    // Seq 輸出
-    .WriteTo.Seq("http://localhost:5341")
-    // Grafana Loki 輸出
-    .WriteTo.GrafanaLoki(
-        "http://localhost:3100",
-        labels: new List<LokiLabel>
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{ServiceName}/{SourceContext}] [TraceId:{TraceId}] {Message:lj}{NewLine}{Exception}")
+    // OpenTelemetry Collector - 統一收集後分發到 Seq, Loki, Elasticsearch, Tempo
+    .WriteTo.OpenTelemetry(options =>
+    {
+        options.Endpoint = "http://localhost:4317";
+        options.Protocol = OtlpProtocol.Grpc;
+        options.ResourceAttributes = new Dictionary<string, object>
         {
-            new LokiLabel { Key = "app", Value = "DotnetSeqDemo" },
-            new LokiLabel { Key = "environment", Value = "Demo" }
-        },
-        propertiesAsLabels: new[] { "ServiceName", "WorkflowName", "EventType" })
-    // Elasticsearch 輸出 (via Logstash HTTP)
-    .WriteTo.Http(
-        requestUri: "http://localhost:8080",
-        queueLimitBytes: null)
+            ["service.name"] = "DotnetSeqDemo",
+            ["service.namespace"] = "Demo",
+            ["deployment.environment"] = "Demo"
+        };
+    })
     .CreateLogger();
 
 try
@@ -80,241 +102,311 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
     {
         try
         {
-            // 生成 workflow 的追蹤 ID
-            var traceId = Guid.NewGuid().ToString();
-            var correlationId = Guid.NewGuid().ToString();
             var userId = $"USER_{random.Next(100, 999)}";
             var sessionId = Guid.NewGuid().ToString();
 
-            using (LogContext.PushProperty("TraceId", traceId))
-            using (LogContext.PushProperty("CorrelationId", correlationId))
+            // 創建 Workflow Span - TraceId 會自動生成並關聯到所有 logs
+            using var workflowActivity = activitySource.StartActivity(workflowName, ActivityKind.Internal);
+            workflowActivity?.SetTag("user.id", userId);
+            workflowActivity?.SetTag("session.id", sessionId);
+            workflowActivity?.SetTag("workflow.name", workflowName);
+
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
             using (LogContext.PushProperty("WorkflowName", workflowName))
             {
                 // 步驟 1: 玩家登入 (PlayerService.AuthenticationHandler)
-                var loginContext = new
+                using (var stepActivity = activitySource.StartActivity("1-Login", ActivityKind.Internal))
                 {
-                    IP = $"{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}",
-                    Device = new[] { "iOS", "Android", "Desktop", "Mobile Web" }[random.Next(4)],
-                    Browser = new[] { "Chrome", "Safari", "Firefox", "Edge" }[random.Next(4)],
-                    Location = new[] { "台灣", "香港", "新加坡", "日本" }[random.Next(4)]
-                };
+                    stepActivity?.SetTag("service.name", SERVICE_PLAYER);
+                    stepActivity?.SetTag("operation", "AuthenticationHandler");
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
-                using (LogContext.PushProperty("SourceContext", "AuthenticationHandler"))
-                using (LogContext.PushProperty("WorkflowStep", "1-Login"))
-                using (LogContext.PushProperty("EventType", "PlayerLogin"))
-                using (LogContext.PushProperty("LoginContext", loginContext, destructureObjects: true))
-                {
-                    Log.Information("玩家登入: {UserId} from {Location} using {Device}",
-                        userId, loginContext.Location, loginContext.Device);
+                    var loginContext = new
+                    {
+                        IP = $"{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}.{random.Next(1, 255)}",
+                        Device = new[] { "iOS", "Android", "Desktop", "Mobile Web" }[random.Next(4)],
+                        Browser = new[] { "Chrome", "Safari", "Firefox", "Edge" }[random.Next(4)],
+                        Location = new[] { "台灣", "香港", "新加坡", "日本" }[random.Next(4)]
+                    };
+
+                    stepActivity?.SetTag("user.ip", loginContext.IP);
+                    stepActivity?.SetTag("user.device", loginContext.Device);
+                    stepActivity?.SetTag("user.location", loginContext.Location);
+
+                    using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
+                    using (LogContext.PushProperty("SourceContext", "AuthenticationHandler"))
+                    using (LogContext.PushProperty("WorkflowStep", "1-Login"))
+                    using (LogContext.PushProperty("EventType", "PlayerLogin"))
+                    using (LogContext.PushProperty("LoginContext", loginContext, destructureObjects: true))
+                    {
+                        Log.Information("玩家登入: {UserId} from {Location} using {Device}",
+                            userId, loginContext.Location, loginContext.Device);
+                    }
+
+                    await Task.Delay(100, cancellationToken);
                 }
-
-                await Task.Delay(100, cancellationToken);
 
                 // 步驟 2: 玩家驗證 (PlayerService.AuthorizationHandler)
-                var authDetails = new
+                using (var stepActivity = activitySource.StartActivity("2-Authentication", ActivityKind.Internal))
                 {
-                    AuthMethod = new[] { "Password", "Biometric", "2FA", "OAuth" }[random.Next(4)],
-                    Token = Guid.NewGuid().ToString(),
-                    Role = new[] { "Player", "VIP", "Premium" }[random.Next(3)],
-                    AuthTimestamp = DateTime.UtcNow
-                };
+                    stepActivity?.SetTag("service.name", SERVICE_PLAYER);
+                    stepActivity?.SetTag("operation", "AuthorizationHandler");
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
-                using (LogContext.PushProperty("SourceContext", "AuthorizationHandler"))
-                using (LogContext.PushProperty("WorkflowStep", "2-Authentication"))
-                using (LogContext.PushProperty("EventType", "PlayerAuthenticated"))
-                using (LogContext.PushProperty("AuthDetails", authDetails, destructureObjects: true))
-                {
-                    Log.Information("玩家驗證成功: {UserId} with {AuthMethod}, Role: {Role}",
-                        userId, authDetails.AuthMethod, authDetails.Role);
+                    var authDetails = new
+                    {
+                        AuthMethod = new[] { "Password", "Biometric", "2FA", "OAuth" }[random.Next(4)],
+                        Token = Guid.NewGuid().ToString(),
+                        Role = new[] { "Player", "VIP", "Premium" }[random.Next(3)],
+                        AuthTimestamp = DateTime.UtcNow
+                    };
+
+                    stepActivity?.SetTag("auth.method", authDetails.AuthMethod);
+                    stepActivity?.SetTag("user.role", authDetails.Role);
+
+                    using (LogContext.PushProperty("ServiceName", SERVICE_PLAYER))
+                    using (LogContext.PushProperty("SourceContext", "AuthorizationHandler"))
+                    using (LogContext.PushProperty("WorkflowStep", "2-Authentication"))
+                    using (LogContext.PushProperty("EventType", "PlayerAuthenticated"))
+                    using (LogContext.PushProperty("AuthDetails", authDetails, destructureObjects: true))
+                    {
+                        Log.Information("玩家驗證成功: {UserId} with {AuthMethod}, Role: {Role}",
+                            userId, authDetails.AuthMethod, authDetails.Role);
+                    }
+
+                    await Task.Delay(100, cancellationToken);
                 }
-
-                await Task.Delay(100, cancellationToken);
 
                 // 步驟 3: 查詢餘額 (WalletService.BalanceManager)
                 var currentBalance = random.Next(100, 10000);
-                var balanceInfo = new
+                string balanceCurrency;
+                using (var stepActivity = activitySource.StartActivity("3-BalanceCheck", ActivityKind.Internal))
                 {
-                    Balance = currentBalance,
-                    Currency = new[] { "USD", "TWD", "HKD", "SGD" }[random.Next(4)],
-                    WalletId = $"WALLET_{random.Next(1000, 9999)}",
-                    LastUpdated = DateTime.UtcNow
-                };
+                    stepActivity?.SetTag("service.name", SERVICE_WALLET);
+                    stepActivity?.SetTag("operation", "BalanceManager");
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                using (LogContext.PushProperty("SourceContext", "BalanceManager"))
-                using (LogContext.PushProperty("WorkflowStep", "3-BalanceCheck"))
-                using (LogContext.PushProperty("EventType", "BalanceChecked"))
-                using (LogContext.PushProperty("BalanceInfo", balanceInfo, destructureObjects: true))
-                {
-                    Log.Information("查詢餘額: {UserId} Balance: {Balance} {Currency}",
-                        userId, balanceInfo.Balance, balanceInfo.Currency);
-
-                    // 低餘額警告 (20% 機率)
-                    if (currentBalance < 500 && random.Next(0, 5) == 0)
+                    var balanceInfo = new
                     {
-                        Log.Warning("低餘額警告: {UserId} 餘額僅剩 {Balance} {Currency}",
-                            userId, currentBalance, balanceInfo.Currency);
-                    }
-                }
+                        Balance = currentBalance,
+                        Currency = new[] { "USD", "TWD", "HKD", "SGD" }[random.Next(4)],
+                        WalletId = $"WALLET_{random.Next(1000, 9999)}",
+                        LastUpdated = DateTime.UtcNow
+                    };
+                    balanceCurrency = balanceInfo.Currency;
 
-                await Task.Delay(100, cancellationToken);
+                    stepActivity?.SetTag("wallet.balance", currentBalance);
+                    stepActivity?.SetTag("wallet.currency", balanceInfo.Currency);
+
+                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                    using (LogContext.PushProperty("SourceContext", "BalanceManager"))
+                    using (LogContext.PushProperty("WorkflowStep", "3-BalanceCheck"))
+                    using (LogContext.PushProperty("EventType", "BalanceChecked"))
+                    using (LogContext.PushProperty("BalanceInfo", balanceInfo, destructureObjects: true))
+                    {
+                        Log.Information("查詢餘額: {UserId} Balance: {Balance} {Currency}",
+                            userId, balanceInfo.Balance, balanceInfo.Currency);
+
+                        // 低餘額警告 (20% 機率)
+                        if (currentBalance < 500 && random.Next(0, 5) == 0)
+                        {
+                            stepActivity?.SetStatus(ActivityStatusCode.Ok, "Low balance warning");
+                            Log.Warning("低餘額警告: {UserId} 餘額僅剩 {Balance} {Currency}",
+                                userId, currentBalance, balanceInfo.Currency);
+                        }
+                    }
+
+                    await Task.Delay(100, cancellationToken);
+                }
 
                 // 步驟 4: 遊戲開始 (GameService.GameSessionManager)
                 var gameId = $"GAME_{random.Next(1, 99)}";
                 var tableId = $"TABLE_{random.Next(1, 20)}";
-                var gameDetails = new
+                string gameType;
+                using (var stepActivity = activitySource.StartActivity("4-GameStart", ActivityKind.Internal))
                 {
-                    GameType = new[] { "Baccarat", "BlackJack", "Roulette", "DragonTiger" }[random.Next(4)],
-                    GameId = gameId,
-                    TableId = tableId,
-                    Dealer = $"DEALER_{random.Next(1, 50)}",
-                    MinBet = 10,
-                    MaxBet = 1000
-                };
+                    stepActivity?.SetTag("service.name", SERVICE_GAME);
+                    stepActivity?.SetTag("operation", "GameSessionManager");
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
-                using (LogContext.PushProperty("SourceContext", "GameSessionManager"))
-                using (LogContext.PushProperty("WorkflowStep", "4-GameStart"))
-                using (LogContext.PushProperty("EventType", "GameStarted"))
-                using (LogContext.PushProperty("GameId", gameId))
-                using (LogContext.PushProperty("TableId", tableId))
-                using (LogContext.PushProperty("GameDetails", gameDetails, destructureObjects: true))
-                {
-                    Log.Information("遊戲開始: {GameType} at {TableId}, Dealer: {Dealer}",
-                        gameDetails.GameType, tableId, gameDetails.Dealer);
-
-                    // 遊戲連線問題警告 (15% 機率)
-                    if (random.Next(0, 100) < 15)
+                    var gameDetails = new
                     {
-                        var latency = random.Next(500, 2000);
-                        var connectionIssue = new
+                        GameType = new[] { "Baccarat", "BlackJack", "Roulette", "DragonTiger" }[random.Next(4)],
+                        GameId = gameId,
+                        TableId = tableId,
+                        Dealer = $"DEALER_{random.Next(1, 50)}",
+                        MinBet = 10,
+                        MaxBet = 1000
+                    };
+                    gameType = gameDetails.GameType;
+
+                    stepActivity?.SetTag("game.id", gameId);
+                    stepActivity?.SetTag("game.type", gameType);
+                    stepActivity?.SetTag("game.table_id", tableId);
+
+                    using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
+                    using (LogContext.PushProperty("SourceContext", "GameSessionManager"))
+                    using (LogContext.PushProperty("WorkflowStep", "4-GameStart"))
+                    using (LogContext.PushProperty("EventType", "GameStarted"))
+                    using (LogContext.PushProperty("GameId", gameId))
+                    using (LogContext.PushProperty("TableId", tableId))
+                    using (LogContext.PushProperty("GameDetails", gameDetails, destructureObjects: true))
+                    {
+                        Log.Information("遊戲開始: {GameType} at {TableId}, Dealer: {Dealer}",
+                            gameDetails.GameType, tableId, gameDetails.Dealer);
+
+                        // 遊戲連線問題警告 (15% 機率)
+                        if (random.Next(0, 100) < 15)
                         {
-                            Issue = "HighLatency",
-                            Latency = latency,
-                            TableId = tableId,
-                            Timestamp = DateTime.UtcNow
-                        };
-                        using (LogContext.PushProperty("ConnectionIssue", connectionIssue, destructureObjects: true))
-                        {
-                            Log.Warning("遊戲連線延遲: {TableId} 延遲 {Latency}ms",
-                                tableId, latency);
+                            var latency = random.Next(500, 2000);
+                            stepActivity?.SetTag("connection.latency_ms", latency);
+                            var connectionIssue = new
+                            {
+                                Issue = "HighLatency",
+                                Latency = latency,
+                                TableId = tableId,
+                                Timestamp = DateTime.UtcNow
+                            };
+                            using (LogContext.PushProperty("ConnectionIssue", connectionIssue, destructureObjects: true))
+                            {
+                                Log.Warning("遊戲連線延遲: {TableId} 延遲 {Latency}ms",
+                                    tableId, latency);
+                            }
                         }
                     }
-                }
 
-                await Task.Delay(200, cancellationToken);
+                    await Task.Delay(200, cancellationToken);
+                }
 
                 // 步驟 5: 下注 (GameService.BettingHandler)
                 var betId = Guid.NewGuid().ToString();
                 var betAmount = random.Next(10, 500);
+                string betType = "";
 
-                // 檢查餘額是否足夠 (10% 機率不足) - WalletService 驗證
-                if (random.Next(0, 10) == 0)
+                using (var stepActivity = activitySource.StartActivity("5-PlaceBet", ActivityKind.Internal))
                 {
-                    betAmount = currentBalance + random.Next(100, 500); // 超過餘額
-                    var insufficientError = new
-                    {
-                        BetId = betId,
-                        RequestedAmount = betAmount,
-                        AvailableBalance = currentBalance,
-                        Shortage = betAmount - currentBalance,
-                        Currency = balanceInfo.Currency
-                    };
+                    stepActivity?.SetTag("service.name", SERVICE_GAME);
+                    stepActivity?.SetTag("bet.id", betId);
 
-                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                    using (LogContext.PushProperty("SourceContext", "BalanceValidator"))
-                    using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
-                    using (LogContext.PushProperty("EventType", "BetRejected"))
-                    using (LogContext.PushProperty("BetId", betId))
-                    using (LogContext.PushProperty("InsufficientError", insufficientError, destructureObjects: true))
+                    // 檢查餘額是否足夠 (10% 機率不足) - WalletService 驗證
+                    if (random.Next(0, 10) == 0)
                     {
-                        Log.Error("下注失敗 - 餘額不足: {UserId} 嘗試下注 {RequestedAmount}，但餘額僅 {AvailableBalance}",
-                            userId, betAmount, currentBalance);
+                        betAmount = currentBalance + random.Next(100, 500); // 超過餘額
+                        stepActivity?.SetStatus(ActivityStatusCode.Error, "Insufficient balance");
+                        stepActivity?.SetTag("error.type", "InsufficientBalance");
+
+                        var insufficientError = new
+                        {
+                            BetId = betId,
+                            RequestedAmount = betAmount,
+                            AvailableBalance = currentBalance,
+                            Shortage = betAmount - currentBalance,
+                            Currency = balanceCurrency
+                        };
+
+                        using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                        using (LogContext.PushProperty("SourceContext", "BalanceValidator"))
+                        using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
+                        using (LogContext.PushProperty("EventType", "BetRejected"))
+                        using (LogContext.PushProperty("BetId", betId))
+                        using (LogContext.PushProperty("InsufficientError", insufficientError, destructureObjects: true))
+                        {
+                            Log.Error("下注失敗 - 餘額不足: {UserId} 嘗試下注 {RequestedAmount}，但餘額僅 {AvailableBalance}",
+                                userId, betAmount, currentBalance);
+                        }
+
+                        // 發送通知 (NotificationService)
+                        using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
+                        using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                        {
+                            Log.Warning("BettingWorkflow 因餘額不足而終止 for {UserId}", userId);
+                        }
+                        workflowActivity?.SetStatus(ActivityStatusCode.Error, "Insufficient balance");
+                        await Task.Delay(2000, cancellationToken);
+                        continue;
                     }
 
-                    // 發送通知 (NotificationService)
-                    using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
-                    using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
+                    // 檢查下注是否超過最大限制 (5% 機率)
+                    if (betAmount > 1000 && random.Next(0, 20) == 0)
                     {
-                        Log.Warning("BettingWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
-                    }
-                    await Task.Delay(2000, cancellationToken);
-                    continue;
-                }
+                        var limitError = new
+                        {
+                            BetId = betId,
+                            RequestedAmount = betAmount,
+                            MaxLimit = 1000,
+                            ExcessAmount = betAmount - 1000
+                        };
 
-                // 檢查下注是否超過最大限制 (5% 機率)
-                if (betAmount > 1000 && random.Next(0, 20) == 0)
-                {
-                    var limitError = new
+                        using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
+                        using (LogContext.PushProperty("SourceContext", "BettingLimitValidator"))
+                        using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
+                        using (LogContext.PushProperty("EventType", "BetLimitExceeded"))
+                        using (LogContext.PushProperty("BetId", betId))
+                        using (LogContext.PushProperty("LimitError", limitError, destructureObjects: true))
+                        {
+                            Log.Warning("下注警告 - 超過限額: {UserId} 嘗試下注 {RequestedAmount}，超過最大限額 {MaxLimit}",
+                                userId, betAmount, 1000);
+                        }
+
+                        betAmount = 1000; // 調整為最大限額
+                    }
+
+                    betType = new[] { "Player", "Banker", "Tie", "Red", "Black" }[random.Next(5)];
+                    var betDetails = new
                     {
                         BetId = betId,
-                        RequestedAmount = betAmount,
-                        MaxLimit = 1000,
-                        ExcessAmount = betAmount - 1000
+                        Amount = betAmount,
+                        Currency = balanceCurrency,
+                        BetType = betType,
+                        RemainingBalance = currentBalance - betAmount,
+                        Timestamp = DateTime.UtcNow
                     };
+
+                    stepActivity?.SetTag("bet.amount", betAmount);
+                    stepActivity?.SetTag("bet.type", betType);
+                    stepActivity?.SetTag("bet.currency", balanceCurrency);
 
                     using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
-                    using (LogContext.PushProperty("SourceContext", "BettingLimitValidator"))
+                    using (LogContext.PushProperty("SourceContext", "BettingHandler"))
                     using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
-                    using (LogContext.PushProperty("EventType", "BetLimitExceeded"))
+                    using (LogContext.PushProperty("EventType", "BetPlaced"))
                     using (LogContext.PushProperty("BetId", betId))
-                    using (LogContext.PushProperty("LimitError", limitError, destructureObjects: true))
+                    using (LogContext.PushProperty("BetDetails", betDetails, destructureObjects: true))
                     {
-                        Log.Warning("下注警告 - 超過限額: {UserId} 嘗試下注 {RequestedAmount}，超過最大限額 {MaxLimit}",
-                            userId, betAmount, 1000);
+                        Log.Information("下注: {UserId} bet {Amount} {Currency} on {BetType}",
+                            userId, betAmount, balanceCurrency, betType);
                     }
 
-                    betAmount = 1000; // 調整為最大限額
+                    await Task.Delay(300, cancellationToken);
                 }
-
-                var betDetails = new
-                {
-                    BetId = betId,
-                    Amount = betAmount,
-                    Currency = balanceInfo.Currency,
-                    BetType = new[] { "Player", "Banker", "Tie", "Red", "Black" }[random.Next(5)],
-                    RemainingBalance = currentBalance - betAmount,
-                    Timestamp = DateTime.UtcNow
-                };
-
-                using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
-                using (LogContext.PushProperty("SourceContext", "BettingHandler"))
-                using (LogContext.PushProperty("WorkflowStep", "5-PlaceBet"))
-                using (LogContext.PushProperty("EventType", "BetPlaced"))
-                using (LogContext.PushProperty("BetId", betId))
-                using (LogContext.PushProperty("BetDetails", betDetails, destructureObjects: true))
-                {
-                    Log.Information("下注: {UserId} bet {Amount} {Currency} on {BetType}",
-                        userId, betAmount, balanceInfo.Currency, betDetails.BetType);
-                }
-
-                await Task.Delay(300, cancellationToken);
 
                 // 步驟 6: 遊戲結果 (GameService.ResultHandler)
-                var gameRound = $"ROUND_{random.Next(10000, 99999)}";
-                var resultDetails = new
+                string gameResult;
+                using (var stepActivity = activitySource.StartActivity("6-GameResult", ActivityKind.Internal))
                 {
-                    Result = new[] { "Player Win", "Banker Win", "Tie", "Red", "Black" }[random.Next(5)],
-                    Cards = $"{random.Next(1, 14)}-{random.Next(1, 14)}-{random.Next(1, 14)}",
-                    GameRound = gameRound,
-                    Timestamp = DateTime.UtcNow
-                };
+                    stepActivity?.SetTag("service.name", SERVICE_GAME);
+                    var gameRound = $"ROUND_{random.Next(10000, 99999)}";
+                    var resultDetails = new
+                    {
+                        Result = new[] { "Player Win", "Banker Win", "Tie", "Red", "Black" }[random.Next(5)],
+                        Cards = $"{random.Next(1, 14)}-{random.Next(1, 14)}-{random.Next(1, 14)}",
+                        GameRound = gameRound,
+                        Timestamp = DateTime.UtcNow
+                    };
+                    gameResult = resultDetails.Result;
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
-                using (LogContext.PushProperty("SourceContext", "ResultHandler"))
-                using (LogContext.PushProperty("WorkflowStep", "6-GameResult"))
-                using (LogContext.PushProperty("EventType", "GameResult"))
-                using (LogContext.PushProperty("ResultDetails", resultDetails, destructureObjects: true))
-                {
-                    Log.Information("遊戲結果: {Result}, Cards: {Cards}, Round: {GameRound}",
-                        resultDetails.Result, resultDetails.Cards, gameRound);
+                    stepActivity?.SetTag("game.round", gameRound);
+                    stepActivity?.SetTag("game.result", gameResult);
+
+                    using (LogContext.PushProperty("ServiceName", SERVICE_GAME))
+                    using (LogContext.PushProperty("SourceContext", "ResultHandler"))
+                    using (LogContext.PushProperty("WorkflowStep", "6-GameResult"))
+                    using (LogContext.PushProperty("EventType", "GameResult"))
+                    using (LogContext.PushProperty("ResultDetails", resultDetails, destructureObjects: true))
+                    {
+                        Log.Information("遊戲結果: {Result}, Cards: {Cards}, Round: {GameRound}",
+                            resultDetails.Result, resultDetails.Cards, gameRound);
+                    }
+
+                    await Task.Delay(100, cancellationToken);
                 }
-
-                await Task.Delay(100, cancellationToken);
 
                 // 步驟 7: 注單結算 (WalletService.SettlementProcessor)
                 var isWin = random.Next(0, 2) == 1;
@@ -322,82 +414,98 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 var profit = winAmount - betAmount;
                 var transactionId = Guid.NewGuid().ToString();
 
-                var settlementDetails = new
+                using (var stepActivity = activitySource.StartActivity("7-Settlement", ActivityKind.Internal))
                 {
-                    BetId = betId,
-                    TransactionId = transactionId,
-                    BetAmount = betAmount,
-                    WinAmount = winAmount,
-                    Profit = profit,
-                    Status = isWin ? "Win" : "Loss",
-                    SettledAt = DateTime.UtcNow
-                };
+                    stepActivity?.SetTag("service.name", SERVICE_WALLET);
+                    stepActivity?.SetTag("transaction.id", transactionId);
+                    stepActivity?.SetTag("bet.result", isWin ? "Win" : "Loss");
+                    stepActivity?.SetTag("bet.profit", profit);
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                using (LogContext.PushProperty("SourceContext", "SettlementProcessor"))
-                using (LogContext.PushProperty("WorkflowStep", "7-Settlement"))
-                using (LogContext.PushProperty("EventType", "BetSettled"))
-                using (LogContext.PushProperty("TransactionId", transactionId))
-                using (LogContext.PushProperty("SettlementDetails", settlementDetails, destructureObjects: true))
-                {
-                    Log.Information("注單結算: {Status}, Bet: {BetAmount}, Win: {WinAmount}, Profit: {Profit}",
-                        settlementDetails.Status, betAmount, winAmount, profit);
-
-                    // 結算延遲警告 (10% 機率)
-                    if (random.Next(0, 10) == 0)
+                    var settlementDetails = new
                     {
-                        var delayInfo = new
+                        BetId = betId,
+                        TransactionId = transactionId,
+                        BetAmount = betAmount,
+                        WinAmount = winAmount,
+                        Profit = profit,
+                        Status = isWin ? "Win" : "Loss",
+                        SettledAt = DateTime.UtcNow
+                    };
+
+                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                    using (LogContext.PushProperty("SourceContext", "SettlementProcessor"))
+                    using (LogContext.PushProperty("WorkflowStep", "7-Settlement"))
+                    using (LogContext.PushProperty("EventType", "BetSettled"))
+                    using (LogContext.PushProperty("TransactionId", transactionId))
+                    using (LogContext.PushProperty("SettlementDetails", settlementDetails, destructureObjects: true))
+                    {
+                        Log.Information("注單結算: {Status}, Bet: {BetAmount}, Win: {WinAmount}, Profit: {Profit}",
+                            settlementDetails.Status, betAmount, winAmount, profit);
+
+                        // 結算延遲警告 (10% 機率)
+                        if (random.Next(0, 10) == 0)
                         {
-                            TransactionId = transactionId,
-                            DelaySeconds = random.Next(3, 10),
-                            Reason = new[] { "DatabaseLatency", "HighLoad", "NetworkIssue" }[random.Next(3)]
-                        };
-                        using (LogContext.PushProperty("DelayInfo", delayInfo, destructureObjects: true))
-                        {
-                            Log.Warning("結算延遲: Transaction {TransactionId} 延遲 {DelaySeconds} 秒，原因: {Reason}",
-                                transactionId, delayInfo.DelaySeconds, delayInfo.Reason);
+                            var delayInfo = new
+                            {
+                                TransactionId = transactionId,
+                                DelaySeconds = random.Next(3, 10),
+                                Reason = new[] { "DatabaseLatency", "HighLoad", "NetworkIssue" }[random.Next(3)]
+                            };
+                            using (LogContext.PushProperty("DelayInfo", delayInfo, destructureObjects: true))
+                            {
+                                Log.Warning("結算延遲: Transaction {TransactionId} 延遲 {DelaySeconds} 秒，原因: {Reason}",
+                                    transactionId, delayInfo.DelaySeconds, delayInfo.Reason);
+                            }
                         }
                     }
+
+                    await Task.Delay(100, cancellationToken);
                 }
 
-                await Task.Delay(100, cancellationToken);
-
                 // 步驟 8: 餘額更新 (WalletService.BalanceManager)
-                var newBalance = currentBalance + profit;
-                var balanceChange = new
+                using (var stepActivity = activitySource.StartActivity("8-BalanceUpdate", ActivityKind.Internal))
                 {
-                    PreviousBalance = currentBalance,
-                    NewBalance = newBalance,
-                    ChangeAmount = profit,
-                    ChangeType = profit >= 0 ? "Credit" : "Debit",
-                    TransactionId = transactionId,
-                    Timestamp = DateTime.UtcNow
-                };
+                    stepActivity?.SetTag("service.name", SERVICE_WALLET);
+                    var newBalance = currentBalance + profit;
+                    stepActivity?.SetTag("wallet.previous_balance", currentBalance);
+                    stepActivity?.SetTag("wallet.new_balance", newBalance);
 
-                using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
-                using (LogContext.PushProperty("SourceContext", "BalanceManager"))
-                using (LogContext.PushProperty("WorkflowStep", "8-BalanceUpdate"))
-                using (LogContext.PushProperty("EventType", "BalanceUpdated"))
-                using (LogContext.PushProperty("BalanceChange", balanceChange, destructureObjects: true))
-                {
-                    Log.Information("餘額更新: {PreviousBalance} -> {NewBalance} ({ChangeType}: {ChangeAmount})",
-                        currentBalance, newBalance, balanceChange.ChangeType, Math.Abs(profit));
-
-                    // 餘額更新錯誤 (5% 機率)
-                    if (random.Next(0, 20) == 0)
+                    var balanceChange = new
                     {
-                        var updateError = new
+                        PreviousBalance = currentBalance,
+                        NewBalance = newBalance,
+                        ChangeAmount = profit,
+                        ChangeType = profit >= 0 ? "Credit" : "Debit",
+                        TransactionId = transactionId,
+                        Timestamp = DateTime.UtcNow
+                    };
+
+                    using (LogContext.PushProperty("ServiceName", SERVICE_WALLET))
+                    using (LogContext.PushProperty("SourceContext", "BalanceManager"))
+                    using (LogContext.PushProperty("WorkflowStep", "8-BalanceUpdate"))
+                    using (LogContext.PushProperty("EventType", "BalanceUpdated"))
+                    using (LogContext.PushProperty("BalanceChange", balanceChange, destructureObjects: true))
+                    {
+                        Log.Information("餘額更新: {PreviousBalance} -> {NewBalance} ({ChangeType}: {ChangeAmount})",
+                            currentBalance, newBalance, balanceChange.ChangeType, Math.Abs(profit));
+
+                        // 餘額更新錯誤 (5% 機率)
+                        if (random.Next(0, 20) == 0)
                         {
-                            TransactionId = transactionId,
-                            ErrorCode = "BALANCE_UPDATE_FAILED",
-                            ErrorMessage = "資料庫寫入失敗，將重試",
-                            RetryAttempt = 1,
-                            MaxRetries = 3
-                        };
-                        using (LogContext.PushProperty("UpdateError", updateError, destructureObjects: true))
-                        {
-                            Log.Error("餘額更新失敗: Transaction {TransactionId}，錯誤: {ErrorMessage}",
-                                transactionId, updateError.ErrorMessage);
+                            stepActivity?.SetStatus(ActivityStatusCode.Error, "Database write failed");
+                            var updateError = new
+                            {
+                                TransactionId = transactionId,
+                                ErrorCode = "BALANCE_UPDATE_FAILED",
+                                ErrorMessage = "資料庫寫入失敗，將重試",
+                                RetryAttempt = 1,
+                                MaxRetries = 3
+                            };
+                            using (LogContext.PushProperty("UpdateError", updateError, destructureObjects: true))
+                            {
+                                Log.Error("餘額更新失敗: Transaction {TransactionId}，錯誤: {ErrorMessage}",
+                                    transactionId, updateError.ErrorMessage);
+                            }
                         }
                     }
                 }
@@ -406,7 +514,7 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
                 using (LogContext.PushProperty("SourceContext", "WorkflowNotifier"))
                 {
-                    Log.Information("BettingWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    Log.Information("BettingWorkflow completed for {UserId}", userId);
                 }
             }
 
@@ -437,13 +545,15 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
         {
             await Task.Delay(500, cancellationToken); // 稍微延遲開始時間
 
-            var traceId = Guid.NewGuid().ToString();
-            var correlationId = Guid.NewGuid().ToString();
             var userId = $"USER_{random.Next(100, 999)}";
             var sessionId = Guid.NewGuid().ToString();
 
-            using (LogContext.PushProperty("TraceId", traceId))
-            using (LogContext.PushProperty("CorrelationId", correlationId))
+            // 創建 Workflow Span
+            using var workflowActivity = activitySource.StartActivity(workflowName, ActivityKind.Internal);
+            workflowActivity?.SetTag("user.id", userId);
+            workflowActivity?.SetTag("session.id", sessionId);
+            workflowActivity?.SetTag("workflow.name", workflowName);
+
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
             using (LogContext.PushProperty("WorkflowName", workflowName))
@@ -526,7 +636,7 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
                     using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
                     {
-                        Log.Warning("DepositWorkflow 因驗證失敗而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                        Log.Warning("DepositWorkflow 因驗證失敗而終止 for {UserId}", userId);
                     }
                     await Task.Delay(2000, cancellationToken);
                     continue;
@@ -620,7 +730,7 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                 using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
                 using (LogContext.PushProperty("SourceContext", "WorkflowNotifier"))
                 {
-                    Log.Information("DepositWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    Log.Information("DepositWorkflow completed for {UserId}", userId);
                 }
             }
 
@@ -651,13 +761,15 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
         {
             await Task.Delay(1000, cancellationToken); // 稍微延遲開始時間
 
-            var traceId = Guid.NewGuid().ToString();
-            var correlationId = Guid.NewGuid().ToString();
             var userId = $"USER_{random.Next(100, 999)}";
             var sessionId = Guid.NewGuid().ToString();
 
-            using (LogContext.PushProperty("TraceId", traceId))
-            using (LogContext.PushProperty("CorrelationId", correlationId))
+            // 創建 Workflow Span
+            using var workflowActivity = activitySource.StartActivity(workflowName, ActivityKind.Internal);
+            workflowActivity?.SetTag("user.id", userId);
+            workflowActivity?.SetTag("session.id", sessionId);
+            workflowActivity?.SetTag("workflow.name", workflowName);
+
             using (LogContext.PushProperty("UserId", userId))
             using (LogContext.PushProperty("SessionId", sessionId))
             using (LogContext.PushProperty("WorkflowName", workflowName))
@@ -691,7 +803,7 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                     using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
                     using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
                     {
-                        Log.Warning("WithdrawalWorkflow 因餘額不足而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                        Log.Warning("WithdrawalWorkflow 因餘額不足而終止 for {UserId}", userId);
                     }
                     await Task.Delay(2000, cancellationToken);
                     continue;
@@ -721,7 +833,7 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                     using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
                     using (LogContext.PushProperty("SourceContext", "AlertDispatcher"))
                     {
-                        Log.Warning("WithdrawalWorkflow 因帳戶凍結而終止 for {UserId} with TraceId: {TraceId}", userId, traceId);
+                        Log.Warning("WithdrawalWorkflow 因帳戶凍結而終止 for {UserId}", userId);
                     }
                     await Task.Delay(2000, cancellationToken);
                     continue;
@@ -901,7 +1013,7 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                 using (LogContext.PushProperty("ServiceName", SERVICE_NOTIFICATION))
                 using (LogContext.PushProperty("SourceContext", "WorkflowNotifier"))
                 {
-                    Log.Information("WithdrawalWorkflow completed for {UserId} with TraceId: {TraceId}", userId, traceId);
+                    Log.Information("WithdrawalWorkflow completed for {UserId}", userId);
                 }
             }
 
@@ -915,6 +1027,21 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
         {
             Log.Error(ex, "Error in WithdrawalWorkflow");
             await Task.Delay(2000, cancellationToken);
+        }
+    }
+}
+
+// ActivityEnricher: 自動將 Activity 的 TraceId/SpanId 加入到 log properties
+class ActivityEnricher : ILogEventEnricher
+{
+    public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
+    {
+        var activity = Activity.Current;
+        if (activity != null)
+        {
+            logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("TraceId", activity.TraceId.ToString()));
+            logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("SpanId", activity.SpanId.ToString()));
+            logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("ParentSpanId", activity.ParentSpanId.ToString()));
         }
     }
 }

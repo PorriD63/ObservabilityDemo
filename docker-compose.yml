@@ -1,4 +1,27 @@
 services:
+  # ==================== OpenTelemetry Collector ====================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.118.0
+    container_name: otel-collector
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - ./config/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      seq:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - observability
+
   # ==================== Seq ====================
   seq:
     image: datalust/seq:2025
@@ -36,24 +59,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-
-  logstash:
-    image: docker.elastic.co/logstash/logstash:8.17.0
-    container_name: logstash
-    ports:
-      - "5044:5044"
-      - "9600:9600"
-      - "8080:8080"
-    volumes:
-      - ./config/logstash/pipeline:/usr/share/logstash/pipeline:ro
-    environment:
-      - "LS_JAVA_OPTS=-Xms256m -Xmx256m"
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - observability
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.17.0
@@ -112,9 +117,7 @@ services:
     image: grafana/tempo:2.6.1
     container_name: tempo
     ports:
-      - "3200:3200"   # tempo
-      - "4317:4317"   # otlp grpc
-      - "4318:4318"   # otlp http
+      - "3200:3200"   # tempo query
       - "9411:9411"   # zipkin
       - "14268:14268" # jaeger ingest
     volumes:

@@ -48,10 +48,10 @@ datasources:
     type: elasticsearch
     access: proxy
     url: http://elasticsearch:9200
-    database: "dotnet-logs-*"
+    database: "dotnet-logs*"
     editable: true
     jsonData:
       esVersion: "8.0.0"
       timeField: "@timestamp"
-      logMessageField: "message"
-      logLevelField: "level"
+      logMessageField: "Body"
+      logLevelField: "SeverityText"
