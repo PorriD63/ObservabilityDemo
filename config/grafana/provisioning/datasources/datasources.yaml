@@ -25,16 +25,16 @@ datasources:
       httpMethod: GET
       tracesToLogs:
         datasourceUid: loki
-        tags: ['job', 'instance', 'pod', 'namespace']
-        mappedTags: [{ key: 'service.name', value: 'service' }]
+        tags: ["job", "instance", "pod", "namespace"]
+        mappedTags: [{ key: "service.name", value: "service" }]
         mapTagNamesEnabled: false
-        spanStartTimeShift: '1h'
-        spanEndTimeShift: '-1h'
+        spanStartTimeShift: "1h"
+        spanEndTimeShift: "-1h"
         filterByTraceID: false
         filterBySpanID: false
       tracesToMetrics:
         datasourceUid: prometheus
-        tags: [{ key: 'service.name', value: 'service' }]
+        tags: [{ key: "service.name", value: "service" }]
       serviceMap:
         datasourceUid: prometheus
       nodeGraph:
@@ -51,7 +51,6 @@ datasources:
     database: "dotnet-logs*"
     editable: true
     jsonData:
-      esVersion: "8.0.0"
       timeField: "@timestamp"
       logMessageField: "Body"
       logLevelField: "SeverityText"

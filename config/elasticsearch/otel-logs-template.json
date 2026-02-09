@@ -1,0 +1,73 @@
+{
+  "index_patterns": ["dotnet-logs*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "Timestamp": {
+          "type": "date"
+        },
+        "ObservedTimestamp": {
+          "type": "date"
+        },
+        "TraceId": {
+          "type": "keyword"
+        },
+        "SpanId": {
+          "type": "keyword"
+        },
+        "TraceFlags": {
+          "type": "integer"
+        },
+        "SeverityText": {
+          "type": "keyword"
+        },
+        "SeverityNumber": {
+          "type": "integer"
+        },
+        "Body": {
+          "type": "text"
+        },
+        "Resource": {
+          "type": "object",
+          "properties": {
+            "service.name": {
+              "type": "keyword"
+            },
+            "service.instance.id": {
+              "type": "keyword"
+            },
+            "service.namespace": {
+              "type": "keyword"
+            },
+            "host.name": {
+              "type": "keyword"
+            }
+          }
+        },
+        "Attributes": {
+          "type": "object",
+          "dynamic": true
+        },
+        "Scope": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "keyword"
+            },
+            "version": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  }
+}

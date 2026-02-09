@@ -60,6 +60,19 @@ services:
       timeout: 10s
       retries: 5
 
+  # Elasticsearch index template initialization
+  elasticsearch-init:
+    image: curlimages/curl:8.5.0
+    container_name: elasticsearch-init
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./config/elasticsearch/otel-logs-template.json:/tmp/otel-logs-template.json:ro
+    command: ["sh", "-c", "echo 'Creating OpenTelemetry logs index template...' && curl -X PUT 'http://elasticsearch:9200/_index_template/otel-logs-template' -H 'Content-Type: application/json' -d @/tmp/otel-logs-template.json && echo '' && echo 'Index template created successfully.'"]
+    networks:
+      - observability
+
   kibana:
     image: docker.elastic.co/kibana/kibana:8.17.0
     container_name: kibana

@@ -17,6 +17,19 @@ processors:
         from_attribute: host.name
         action: insert
 
+  # Transform SeverityText to lowercase for Grafana compatibility
+  transform/lowercase_severity:
+    log_statements:
+      - context: log
+        statements:
+          - set(severity_text, "trace") where severity_text == "Trace"
+          - set(severity_text, "debug") where severity_text == "Debug"
+          - set(severity_text, "info") where severity_text == "Information"
+          - set(severity_text, "warn") where severity_text == "Warning"
+          - set(severity_text, "error") where severity_text == "Error"
+          - set(severity_text, "fatal") where severity_text == "Fatal"
+          - set(severity_text, "critical") where severity_text == "Critical"
+
 exporters:
   # Seq (OTLP)
   otlphttp/seq:
@@ -54,7 +67,7 @@ service:
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [batch, resource]
+      processors: [batch, resource, transform/lowercase_severity]
       exporters: [otlphttp/seq, otlphttp/loki, elasticsearch]
 
     traces:
