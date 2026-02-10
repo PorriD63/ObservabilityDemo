@@ -176,19 +176,19 @@ service RiskService {
 ### Phase 4: PlayerGameService
 
 **gRPC server `src/SeqDemo.PlayerGameService/`：**
-- [ ] 建立 `SeqDemo.PlayerGameService.csproj` (Grpc.AspNetCore + Grpc.Net.Client + 參照 SeqDemo.Shared + proto)
-- [ ] `Program.cs` — Host 設定、Serilog、兩個 TracerProvider (PlayerService, GameService)、gRPC server 註冊 (Port 5200)
-- [ ] `Services/PlayerGrpcService.cs` — 實作 `PlayerService` gRPC service
-  - [ ] `Login` — 玩家登入 (對應 Program.cs L133-165)
-  - [ ] `Authenticate` — 玩家驗證 (對應 Program.cs L167-198)
-- [ ] `Services/GameGrpcService.cs` — 實作 `GameService` gRPC service
-  - [ ] `StartGame` — 遊戲開始 (對應 Program.cs L244-303)
-  - [ ] `PlaceBet` — 下注，含餘額檢查 (對應 Program.cs L305-406)
-  - [ ] `GetGameResult` — 遊戲結果 (對應 Program.cs L408-438)
-- [ ] 餘額查詢透過 gRPC client 呼叫 FinanceService (`WalletService/GetBalance`)
-- [ ] 維持兩個 ActivitySource (PlayerService, GameService) → Tempo service graph 顯示兩個節點
-- [ ] 保留所有機率性錯誤/警告情境 (連線延遲、下注限額等)
-- [ ] 確認 `dotnet build` 通過
+- [x] 建立 `SeqDemo.PlayerGameService.csproj` (Grpc.AspNetCore + Grpc.Net.Client + 參照 SeqDemo.Shared + proto)
+- [x] `Program.cs` — Host 設定、Serilog、兩個 TracerProvider (PlayerService, GameService)、gRPC server 註冊 (Port 5200)
+- [x] `Services/PlayerGrpcService.cs` — 實作 `PlayerService` gRPC service
+  - [x] `Login` — 玩家登入 (對應 Program.cs L133-165)
+  - [x] `Authenticate` — 玩家驗證 (對應 Program.cs L167-198)
+- [x] `Services/GameGrpcService.cs` — 實作 `GameService` gRPC service
+  - [x] `StartGame` — 遊戲開始 (對應 Program.cs L244-303)
+  - [x] `PlaceBet` — 下注，含餘額檢查 (對應 Program.cs L305-406)
+  - [x] `GetGameResult` — 遊戲結果 (對應 Program.cs L408-438)
+- [x] 餘額查詢透過 gRPC client 呼叫 FinanceService (`WalletService/GetBalance`)
+- [x] 維持兩個 ActivitySource (PlayerService, GameService) → Tempo service graph 顯示兩個節點
+- [x] 保留所有機率性錯誤/警告情境 (連線延遲、下注限額等)
+- [x] 確認 `dotnet build` 通過
 
 ---
 
