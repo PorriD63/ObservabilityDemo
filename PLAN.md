@@ -133,17 +133,17 @@ service RiskService {
 ### Phase 2: NotificationService + Docker Compose (最簡單，先做)
 
 **Docker Compose：**
-- [ ] 新增 Kafka (KRaft mode, `confluentinc/cp-kafka:7.8.0`) 到 `docker-compose.yml`
-- [ ] 新增 Kafka UI (`provectuslabs/kafka-ui:latest`) 到 `docker-compose.yml`
+- [x] 新增 Kafka (KRaft mode, `confluentinc/cp-kafka:7.8.0`) 到 `docker-compose.yml`
+- [x] 新增 Kafka UI (`provectuslabs/kafka-ui:latest`) 到 `docker-compose.yml`
 - [ ] 確認 `docker compose up -d` 啟動 Kafka 成功
 
 **NotificationService `src/SeqDemo.NotificationService/`：**
-- [ ] 建立 `SeqDemo.NotificationService.csproj` (Worker SDK + 參照 SeqDemo.Shared)
-- [ ] `Program.cs` — Host 設定、Serilog、TracerProvider 初始化
-- [ ] `Workers/NotificationWorker.cs` — BackgroundService 消費所有 Kafka topics
-- [ ] 從 Kafka headers 提取 traceparent → 用 `parentContext` 建立 Consumer span (同 TraceId)
-- [ ] 每個 topic 對應不同的通知 log 訊息 (對應 Program.cs 中 `SERVICE_NOTIFICATION` 區塊)
-- [ ] 確認 `dotnet build` 通過
+- [x] 建立 `SeqDemo.NotificationService.csproj` (Worker SDK + 參照 SeqDemo.Shared)
+- [x] `Program.cs` — Host 設定、Serilog、TracerProvider 初始化
+- [x] `Workers/NotificationWorker.cs` — BackgroundService 消費所有 Kafka topics
+- [x] 從 Kafka headers 提取 traceparent → 用 `parentContext` 建立 Consumer span (同 TraceId)
+- [x] 每個 topic 對應不同的通知 log 訊息 (對應 Program.cs 中 `SERVICE_NOTIFICATION` 區塊)
+- [x] 確認 `dotnet build` 通過
 - [ ] 確認能成功連線 Kafka 並消費訊息
 
 ---
