@@ -151,25 +151,25 @@ service RiskService {
 ### Phase 3: FinanceService
 
 **gRPC server `src/SeqDemo.FinanceService/`：**
-- [ ] 建立 `SeqDemo.FinanceService.csproj` (Grpc.AspNetCore + 參照 SeqDemo.Shared + proto)
-- [ ] `Program.cs` — Host 設定、Serilog、TracerProvider、gRPC server 註冊 (Port 5300)
-- [ ] `Services/WalletGrpcService.cs` — 實作 `WalletService` gRPC service
-  - [ ] `GetBalance` — 餘額查詢 (對應 Program.cs L200-242)
-  - [ ] `Settlement` — 注單結算 (對應 Program.cs L440-544)
-  - [ ] `UpdateBalance` — 餘額更新 (對應 Program.cs L497-544)
-  - [ ] `InitiateDeposit` — 發起存款 (對應 Program.cs L596-646)
-  - [ ] `CreditBalance` — 餘額入帳 (對應 Program.cs L773-805)
-  - [ ] `RequestWithdrawal` — 提款請求 (對應 Program.cs L858-996)
-- [ ] `Services/PaymentGrpcService.cs` — 實作 `PaymentService` gRPC service
-  - [ ] `ValidatePayment` — 驗證支付方式 (對應 Program.cs L648-702)
-  - [ ] `ProcessPayment` — 處理支付 (對應 Program.cs L704-805)
-  - [ ] `ApproveWithdrawal` — 核准提款 (對應 Program.cs L1077-1107)
-- [ ] `Services/RiskGrpcService.cs` — 實作 `RiskService` gRPC service
-  - [ ] `AssessRisk` — 風險評估 (對應 Program.cs L998-1070)
-- [ ] Wallet→Payment→Risk process 內呼叫保留 ActivitySource CLIENT/SERVER span 配對
-- [ ] 結算/支付/提款後透過 KafkaProducer publish 對應 events
-- [ ] 保留所有機率性錯誤/警告情境
-- [ ] 確認 `dotnet build` 通過
+- [x] 建立 `SeqDemo.FinanceService.csproj` (Grpc.AspNetCore + 參照 SeqDemo.Shared + proto)
+- [x] `Program.cs` — Host 設定、Serilog、TracerProvider、gRPC server 註冊 (Port 5300)
+- [x] `Services/WalletGrpcService.cs` — 實作 `WalletService` gRPC service
+  - [x] `GetBalance` — 餘額查詢 (對應 Program.cs L200-242)
+  - [x] `Settlement` — 注單結算 (對應 Program.cs L440-544)
+  - [x] `UpdateBalance` — 餘額更新 (對應 Program.cs L497-544)
+  - [x] `InitiateDeposit` — 發起存款 (對應 Program.cs L596-646)
+  - [x] `CreditBalance` — 餘額入帳 (對應 Program.cs L773-805)
+  - [x] `RequestWithdrawal` — 提款請求 (對應 Program.cs L858-996)
+- [x] `Services/PaymentGrpcService.cs` — 實作 `PaymentService` gRPC service
+  - [x] `ValidatePayment` — 驗證支付方式 (對應 Program.cs L648-702)
+  - [x] `ProcessPayment` — 處理支付 (對應 Program.cs L704-805)
+  - [x] `ApproveWithdrawal` — 核准提款 (對應 Program.cs L1077-1107)
+- [x] `Services/RiskGrpcService.cs` — 實作 `RiskService` gRPC service
+  - [x] `AssessRisk` — 風險評估 (對應 Program.cs L998-1070)
+- [x] Wallet→Payment→Risk process 內呼叫保留 ActivitySource CLIENT/SERVER span 配對
+- [x] 結算/支付/提款後透過 KafkaProducer publish 對應 events
+- [x] 保留所有機率性錯誤/警告情境
+- [x] 確認 `dotnet build` 通過
 
 ---
 
