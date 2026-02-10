@@ -34,17 +34,17 @@
 ### 目錄結構
 
 ```
-SeqDemo/
-├── SeqDemo.sln
+ObservabilityDemo/
+├── ObservabilityDemo.sln
 ├── protos/                            # 共享 .proto 定義
 │   ├── player_game.proto              # PlayerGameService RPC 定義
 │   └── finance.proto                  # FinanceService RPC 定義
 ├── src/
-│   ├── SeqDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
-│   ├── SeqDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
-│   ├── SeqDemo.PlayerGameService/     # Port 5200, gRPC server
-│   ├── SeqDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
-│   └── SeqDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
+│   ├── ObservabilityDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
+│   ├── ObservabilityDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
+│   ├── ObservabilityDemo.PlayerGameService/     # Port 5200, gRPC server
+│   ├── ObservabilityDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
+│   └── ObservabilityDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
 ├── dotnet-demo/                       # 保留原始版本作為參考
 ├── config/                            # 不變
 └── docker-compose.yml                 # 新增 Kafka (KRaft) + Kafka UI
@@ -92,14 +92,14 @@ service RiskService {
 
 ## 實作 Checklist
 
-### Phase 1: Proto 定義 + 共享函式庫 (SeqDemo.Shared)
+### Phase 1: Proto 定義 + 共享函式庫 (ObservabilityDemo.Shared)
 
 **Proto 檔案：**
 - [x] `protos/player_game.proto` — PlayerService、GameService 的 RPC 定義 (含 request/response messages)
 - [x] `protos/finance.proto` — WalletService、PaymentService、RiskService 的 RPC 定義
 
-**共享函式庫 `src/SeqDemo.Shared/`：**
-- [x] 建立 `SeqDemo.Shared.csproj` (含所有共用套件參照)
+**共享函式庫 `src/ObservabilityDemo.Shared/`：**
+- [x] 建立 `ObservabilityDemo.Shared.csproj` (含所有共用套件參照)
 - [x] `Constants/ServiceNames.cs` — 7 個微服務名稱常數
 - [x] `Constants/KafkaTopics.cs` — 6 個 Kafka topic 名稱常數
 - [x] `Telemetry/ActivityEnricher.cs` — 從 Program.cs 搬出，自動注入 TraceId/SpanId 到 log
@@ -137,8 +137,8 @@ service RiskService {
 - [x] 新增 Kafka UI (`provectuslabs/kafka-ui:latest`) 到 `docker-compose.yml`
 - [ ] 確認 `docker compose up -d` 啟動 Kafka 成功
 
-**NotificationService `src/SeqDemo.NotificationService/`：**
-- [x] 建立 `SeqDemo.NotificationService.csproj` (Worker SDK + 參照 SeqDemo.Shared)
+**NotificationService `src/ObservabilityDemo.NotificationService/`：**
+- [x] 建立 `ObservabilityDemo.NotificationService.csproj` (Worker SDK + 參照 ObservabilityDemo.Shared)
 - [x] `Program.cs` — Host 設定、Serilog、TracerProvider 初始化
 - [x] `Workers/NotificationWorker.cs` — BackgroundService 消費所有 Kafka topics
 - [x] 從 Kafka headers 提取 traceparent → 用 `parentContext` 建立 Consumer span (同 TraceId)
@@ -150,8 +150,8 @@ service RiskService {
 
 ### Phase 3: FinanceService
 
-**gRPC server `src/SeqDemo.FinanceService/`：**
-- [x] 建立 `SeqDemo.FinanceService.csproj` (Grpc.AspNetCore + 參照 SeqDemo.Shared + proto)
+**gRPC server `src/ObservabilityDemo.FinanceService/`：**
+- [x] 建立 `ObservabilityDemo.FinanceService.csproj` (Grpc.AspNetCore + 參照 ObservabilityDemo.Shared + proto)
 - [x] `Program.cs` — Host 設定、Serilog、TracerProvider、gRPC server 註冊 (Port 5300)
 - [x] `Services/WalletGrpcService.cs` — 實作 `WalletService` gRPC service
   - [x] `GetBalance` — 餘額查詢 (對應 Program.cs L200-242)
@@ -175,8 +175,8 @@ service RiskService {
 
 ### Phase 4: PlayerGameService
 
-**gRPC server `src/SeqDemo.PlayerGameService/`：**
-- [x] 建立 `SeqDemo.PlayerGameService.csproj` (Grpc.AspNetCore + Grpc.Net.Client + 參照 SeqDemo.Shared + proto)
+**gRPC server `src/ObservabilityDemo.PlayerGameService/`：**
+- [x] 建立 `ObservabilityDemo.PlayerGameService.csproj` (Grpc.AspNetCore + Grpc.Net.Client + 參照 ObservabilityDemo.Shared + proto)
 - [x] `Program.cs` — Host 設定、Serilog、兩個 TracerProvider (PlayerService, GameService)、gRPC server 註冊 (Port 5200)
 - [x] `Services/PlayerGrpcService.cs` — 實作 `PlayerService` gRPC service
   - [x] `Login` — 玩家登入 (對應 Program.cs L133-165)
@@ -194,8 +194,8 @@ service RiskService {
 
 ### Phase 5: GatewayService
 
-**BackgroundService + gRPC client `src/SeqDemo.GatewayService/`：**
-- [x] 建立 `SeqDemo.GatewayService.csproj` (Worker SDK + Grpc.Net.Client + 參照 SeqDemo.Shared + proto)
+**BackgroundService + gRPC client `src/ObservabilityDemo.GatewayService/`：**
+- [x] 建立 `ObservabilityDemo.GatewayService.csproj` (Worker SDK + Grpc.Net.Client + 參照 ObservabilityDemo.Shared + proto)
 - [x] `Program.cs` — Host 設定、Serilog、TracerProvider (ApiGateway)、gRPC client 註冊
 - [x] `Workers/BettingWorkflowWorker.cs` — BackgroundService，透過 gRPC client 編排 8 步驟
   - [x] 步驟 1-2: gRPC → PlayerGameService (Login, Authenticate)
@@ -223,8 +223,8 @@ service RiskService {
 ### Phase 6: 整合與文件
 
 **解決方案：**
-- [x] 建立 `SeqDemo.sln`，加入所有 5 個專案
-- [x] 確認 `dotnet build SeqDemo.sln` 全部通過
+- [x] 建立 `ObservabilityDemo.sln`，加入所有 5 個專案
+- [x] 確認 `dotnet build ObservabilityDemo.sln` 全部通過
 
 **啟動腳本：**
 - [x] 更新 `start-all.bat` — 啟動 docker compose + 依序啟動 4 個服務
@@ -464,7 +464,7 @@ GatewayService (BackgroundService)
 | 分散式追蹤 | 同 process 內偽造 | 真正跨 process gRPC + Kafka trace |
 | Service Graph | 靠多個 TracerProvider 模擬 | 真實 gRPC edges (`rpc.system=grpc`) |
 | 非同步追蹤 | 無 | Kafka Producer→Consumer span 鏈 |
-| 日誌 service.name | 全部 "DotnetSeqDemo" | 每個服務獨立 service.name |
+| 日誌 service.name | 全部 "DotnetObservabilityDemo" | 每個服務獨立 service.name |
 | Span 屬性 | 手動 `http.method/url` | 自動 `rpc.system`, `rpc.service`, `rpc.method` |
 
 ---
@@ -472,7 +472,7 @@ GatewayService (BackgroundService)
 ## 關鍵檔案參考
 
 - `dotnet-demo/Program.cs` — 所有業務邏輯來源 (1178 行)
-- `dotnet-demo/DotnetSeqDemo.csproj` — 套件版本基準
+- `dotnet-demo/DotnetObservabilityDemo.csproj` — 套件版本基準
 - `docker-compose.yml` — 基礎設施定義
 - `config/otel-collector/config.yaml` — 不需改但要理解
 - `config/tempo/tempo-config.yaml` — service-graphs 已啟用

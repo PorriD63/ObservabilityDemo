@@ -15,22 +15,22 @@ echo   Kafka UI: http://localhost:8080
 echo.
 
 echo [2/6] Starting FinanceService (port 5300)...
-start "FinanceService" cmd /c "cd /d %~dp0src\SeqDemo.FinanceService && dotnet run"
+start "FinanceService" cmd /c "cd /d %~dp0src\ObservabilityDemo.FinanceService && dotnet run"
 timeout /t 3 /nobreak > nul
 echo.
 
 echo [3/6] Starting PlayerGameService (port 5200)...
-start "PlayerGameService" cmd /c "cd /d %~dp0src\SeqDemo.PlayerGameService && dotnet run"
+start "PlayerGameService" cmd /c "cd /d %~dp0src\ObservabilityDemo.PlayerGameService && dotnet run"
 timeout /t 3 /nobreak > nul
 echo.
 
 echo [4/6] Starting GatewayService (port 5100)...
-start "GatewayService" cmd /c "cd /d %~dp0src\SeqDemo.GatewayService && dotnet run"
+start "GatewayService" cmd /c "cd /d %~dp0src\ObservabilityDemo.GatewayService && dotnet run"
 timeout /t 2 /nobreak > nul
 echo.
 
 echo [5/6] Starting NotificationService (Kafka consumer)...
-start "NotificationService" cmd /c "cd /d %~dp0src\SeqDemo.NotificationService && dotnet run"
+start "NotificationService" cmd /c "cd /d %~dp0src\ObservabilityDemo.NotificationService && dotnet run"
 echo.
 
 echo [6/6] All services started!

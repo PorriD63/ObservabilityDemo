@@ -35,17 +35,17 @@ GatewayService ──gRPC──▶ PlayerGameService ──gRPC──▶ Finance
 ## 專案結構
 
 ```
-SeqDemo/
-├── SeqDemo.sln
+ObservabilityDemo/
+├── ObservabilityDemo.sln
 ├── protos/                            # 共享 .proto 定義
 │   ├── player_game.proto
 │   └── finance.proto
 ├── src/
-│   ├── SeqDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
-│   ├── SeqDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
-│   ├── SeqDemo.PlayerGameService/     # Port 5200, gRPC server
-│   ├── SeqDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
-│   └── SeqDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
+│   ├── ObservabilityDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
+│   ├── ObservabilityDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
+│   ├── ObservabilityDemo.PlayerGameService/     # Port 5200, gRPC server
+│   ├── ObservabilityDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
+│   └── ObservabilityDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
 ├── dotnet-demo/                       # 保留原始單體版本作為參考
 ├── config/                            # 各服務設定檔
 │   ├── otel-collector/                # OpenTelemetry Collector
@@ -99,7 +99,7 @@ docker compose up -d
 ### 2. 建置解決方案
 
 ```bash
-dotnet build SeqDemo.sln
+dotnet build ObservabilityDemo.sln
 ```
 
 ### 3. 依序啟動微服務
@@ -108,16 +108,16 @@ dotnet build SeqDemo.sln
 
 ```bash
 # 終端 1: FinanceService (gRPC server, port 5300)
-cd src/SeqDemo.FinanceService && dotnet run
+cd src/ObservabilityDemo.FinanceService && dotnet run
 
 # 終端 2: PlayerGameService (gRPC server, port 5200)
-cd src/SeqDemo.PlayerGameService && dotnet run
+cd src/ObservabilityDemo.PlayerGameService && dotnet run
 
 # 終端 3: GatewayService (workflow orchestrator, port 5100)
-cd src/SeqDemo.GatewayService && dotnet run
+cd src/ObservabilityDemo.GatewayService && dotnet run
 
 # 終端 4: NotificationService (Kafka consumer)
-cd src/SeqDemo.NotificationService && dotnet run
+cd src/ObservabilityDemo.NotificationService && dotnet run
 ```
 
 或使用一鍵啟動腳本：

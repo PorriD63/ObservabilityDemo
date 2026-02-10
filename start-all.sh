@@ -33,25 +33,25 @@ echo "  Kafka UI: http://localhost:8080"
 echo ""
 
 echo "[2/6] Starting FinanceService (port 5300)..."
-(cd "$SCRIPT_DIR/src/SeqDemo.FinanceService" && dotnet run) &
+(cd "$SCRIPT_DIR/src/ObservabilityDemo.FinanceService" && dotnet run) &
 PIDS+=($!)
 sleep 3
 echo ""
 
 echo "[3/6] Starting PlayerGameService (port 5200)..."
-(cd "$SCRIPT_DIR/src/SeqDemo.PlayerGameService" && dotnet run) &
+(cd "$SCRIPT_DIR/src/ObservabilityDemo.PlayerGameService" && dotnet run) &
 PIDS+=($!)
 sleep 3
 echo ""
 
 echo "[4/6] Starting GatewayService (port 5100)..."
-(cd "$SCRIPT_DIR/src/SeqDemo.GatewayService" && dotnet run) &
+(cd "$SCRIPT_DIR/src/ObservabilityDemo.GatewayService" && dotnet run) &
 PIDS+=($!)
 sleep 2
 echo ""
 
 echo "[5/6] Starting NotificationService (Kafka consumer)..."
-(cd "$SCRIPT_DIR/src/SeqDemo.NotificationService" && dotnet run) &
+(cd "$SCRIPT_DIR/src/ObservabilityDemo.NotificationService" && dotnet run) &
 PIDS+=($!)
 echo ""
 

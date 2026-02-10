@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option csharp_namespace = "SeqDemo.Shared.Protos";
+option csharp_namespace = "ObservabilityDemo.Shared.Protos";
 
 package finance;
 

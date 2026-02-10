@@ -14,7 +14,7 @@
 ```
 dotnet-demo/
 ├── Program.cs              # 主程式，包含三個 workflow
-├── DotnetSeqDemo.csproj    # .NET 專案檔
+├── DotnetObservabilityDemo.csproj    # .NET 專案檔
 └── README.md               # 說明文件
 ```
 

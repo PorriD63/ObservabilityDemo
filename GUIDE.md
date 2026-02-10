@@ -32,17 +32,17 @@
 ## 專案結構
 
 ```
-SeqDemo/
-├── SeqDemo.sln
+ObservabilityDemo/
+├── ObservabilityDemo.sln
 ├── protos/                            # 共享 .proto 定義
 │   ├── player_game.proto              # PlayerService、GameService RPC 定義
 │   └── finance.proto                  # WalletService、PaymentService、RiskService RPC 定義
 ├── src/
-│   ├── SeqDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
-│   ├── SeqDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
-│   ├── SeqDemo.PlayerGameService/     # Port 5200, gRPC server
-│   ├── SeqDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
-│   └── SeqDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
+│   ├── ObservabilityDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
+│   ├── ObservabilityDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
+│   ├── ObservabilityDemo.PlayerGameService/     # Port 5200, gRPC server
+│   ├── ObservabilityDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
+│   └── ObservabilityDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
 ├── dotnet-demo/                       # 保留原始單體版本作為參考
 ├── config/                            # 各元件設定（OTel Collector、Grafana、Loki、Tempo、Prometheus、Elasticsearch）
 ├── docker-compose.yml                 # 可觀測性基礎設施 + Kafka (KRaft)
@@ -129,13 +129,13 @@ start-all.bat
 docker compose up -d
 
 # 2. 建置整個解決方案
-dotnet build SeqDemo.sln
+dotnet build ObservabilityDemo.sln
 
 # 3. 依序啟動 4 個微服務（各開一個終端）
-cd src/SeqDemo.FinanceService && dotnet run         # 先啟動 gRPC server
-cd src/SeqDemo.PlayerGameService && dotnet run       # 再啟動 gRPC server
-cd src/SeqDemo.GatewayService && dotnet run          # 啟動 workflow 編排器
-cd src/SeqDemo.NotificationService && dotnet run     # 啟動 Kafka consumer
+cd src/ObservabilityDemo.FinanceService && dotnet run         # 先啟動 gRPC server
+cd src/ObservabilityDemo.PlayerGameService && dotnet run       # 再啟動 gRPC server
+cd src/ObservabilityDemo.GatewayService && dotnet run          # 啟動 workflow 編排器
+cd src/ObservabilityDemo.NotificationService && dotnet run     # 啟動 Kafka consumer
 
 # 4. 關閉服務堆疊
 docker compose down          # 保留 volumes
@@ -201,7 +201,7 @@ cd dotnet-demo && dotnet run
 - C# 啟用可為 null 的參考型別與 implicit usings
 - 4 空白縮排
 - 公開型別與成員使用 `PascalCase`，區域變數與參數使用 `camelCase`
-- 共用邏輯放在 `SeqDemo.Shared` 專案中
+- 共用邏輯放在 `ObservabilityDemo.Shared` 專案中
 - Proto 定義放在 `protos/` 目錄
 - 變更應聚焦且最小化
 
@@ -210,7 +210,7 @@ cd dotnet-demo && dotnet run
 ## 測試指引
 
 - 目前沒有自動化測試
-- 若新增測試，建議建立 `tests/SeqDemo.Tests`，並以 `dotnet test` 執行
+- 若新增測試，建議建立 `tests/ObservabilityDemo.Tests`，並以 `dotnet test` 執行
 - 測試類別以 `*Tests` 結尾，測試資料與情境保持就近放置
 
 ---

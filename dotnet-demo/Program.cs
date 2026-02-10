@@ -52,7 +52,7 @@ using var riskTracer = BuildTracer(SERVICE_RISK);
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "DotnetSeqDemo")
+    .Enrich.WithProperty("Application", "DotnetObservabilityDemo")
     .Enrich.WithProperty("Environment", "Demo")
     .Enrich.With(new ActivityEnricher())  // 自動加入 TraceId, SpanId
     // Console 輸出
@@ -64,7 +64,7 @@ Log.Logger = new LoggerConfiguration()
         options.Protocol = OtlpProtocol.Grpc;
         options.ResourceAttributes = new Dictionary<string, object>
         {
-            ["service.name"] = "DotnetSeqDemo",
+            ["service.name"] = "DotnetObservabilityDemo",
             ["service.namespace"] = "Demo",
             ["deployment.environment"] = "Demo"
         };
