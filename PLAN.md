@@ -195,28 +195,28 @@ service RiskService {
 ### Phase 5: GatewayService
 
 **BackgroundService + gRPC client `src/SeqDemo.GatewayService/`：**
-- [ ] 建立 `SeqDemo.GatewayService.csproj` (Worker SDK + Grpc.Net.Client + 參照 SeqDemo.Shared + proto)
-- [ ] `Program.cs` — Host 設定、Serilog、TracerProvider (ApiGateway)、gRPC client 註冊
-- [ ] `Workers/BettingWorkflowWorker.cs` — BackgroundService，透過 gRPC client 編排 8 步驟
-  - [ ] 步驟 1-2: gRPC → PlayerGameService (Login, Authenticate)
-  - [ ] 步驟 3: gRPC → FinanceService (GetBalance)
-  - [ ] 步驟 4-6: gRPC → PlayerGameService (StartGame, PlaceBet, GetGameResult)
-  - [ ] 步驟 7-8: gRPC → FinanceService (Settlement, UpdateBalance)
-  - [ ] Workflow 完成後 Kafka publish `workflow-completed`
-  - [ ] 餘額不足時 Kafka publish `insufficient-balance`
-- [ ] `Workers/DepositWorkflowWorker.cs` — BackgroundService，透過 gRPC client 編排 4 步驟
-  - [ ] 步驟 1: gRPC → FinanceService (InitiateDeposit)
-  - [ ] 步驟 2-3: gRPC → FinanceService (ValidatePayment, ProcessPayment)
-  - [ ] 步驟 4: gRPC → FinanceService (CreditBalance)
-  - [ ] Workflow 完成後 Kafka publish `workflow-completed`
-- [ ] `Workers/WithdrawalWorkflowWorker.cs` — BackgroundService，透過 gRPC client 編排 3 步驟
-  - [ ] 步驟 1: gRPC → FinanceService (RequestWithdrawal)
-  - [ ] 步驟 2: gRPC → FinanceService (AssessRisk)
-  - [ ] 步驟 3: gRPC → FinanceService (ApproveWithdrawal 或 FlagReview)
-  - [ ] Workflow 完成後 Kafka publish `workflow-completed`
-- [ ] OTel.Instrumentation.GrpcNetClient 自動傳播 traceparent → 真正分散式 trace
-- [ ] 每個 workflow 以 root span (ActivityKind.Server) 開始 → 產生 TraceId
-- [ ] 確認 `dotnet build` 通過
+- [x] 建立 `SeqDemo.GatewayService.csproj` (Worker SDK + Grpc.Net.Client + 參照 SeqDemo.Shared + proto)
+- [x] `Program.cs` — Host 設定、Serilog、TracerProvider (ApiGateway)、gRPC client 註冊
+- [x] `Workers/BettingWorkflowWorker.cs` — BackgroundService，透過 gRPC client 編排 8 步驟
+  - [x] 步驟 1-2: gRPC → PlayerGameService (Login, Authenticate)
+  - [x] 步驟 3: gRPC → FinanceService (GetBalance)
+  - [x] 步驟 4-6: gRPC → PlayerGameService (StartGame, PlaceBet, GetGameResult)
+  - [x] 步驟 7-8: gRPC → FinanceService (Settlement, UpdateBalance)
+  - [x] Workflow 完成後 Kafka publish `workflow-completed`
+  - [x] 餘額不足時 Kafka publish `insufficient-balance`
+- [x] `Workers/DepositWorkflowWorker.cs` — BackgroundService，透過 gRPC client 編排 4 步驟
+  - [x] 步驟 1: gRPC → FinanceService (InitiateDeposit)
+  - [x] 步驟 2-3: gRPC → FinanceService (ValidatePayment, ProcessPayment)
+  - [x] 步驟 4: gRPC → FinanceService (CreditBalance)
+  - [x] Workflow 完成後 Kafka publish `workflow-completed`
+- [x] `Workers/WithdrawalWorkflowWorker.cs` — BackgroundService，透過 gRPC client 編排 3 步驟
+  - [x] 步驟 1: gRPC → FinanceService (RequestWithdrawal)
+  - [x] 步驟 2: gRPC → FinanceService (AssessRisk)
+  - [x] 步驟 3: gRPC → FinanceService (ApproveWithdrawal 或 FlagReview)
+  - [x] Workflow 完成後 Kafka publish `workflow-completed`
+- [x] OTel.Instrumentation.GrpcNetClient 自動傳播 traceparent → 真正分散式 trace
+- [x] 每個 workflow 以 root span (ActivityKind.Server) 開始 → 產生 TraceId
+- [x] 確認 `dotnet build` 通過
 
 ---
 
