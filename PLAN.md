@@ -135,7 +135,7 @@ service RiskService {
 **Docker Compose：**
 - [x] 新增 Kafka (KRaft mode, `confluentinc/cp-kafka:7.8.0`) 到 `docker-compose.yml`
 - [x] 新增 Kafka UI (`provectuslabs/kafka-ui:latest`) 到 `docker-compose.yml`
-- [ ] 確認 `docker compose up -d` 啟動 Kafka 成功
+- [x] 確認 `docker compose up -d` 啟動 Kafka 成功
 
 **NotificationService `src/ObservabilityDemo.NotificationService/`：**
 - [x] 建立 `ObservabilityDemo.NotificationService.csproj` (Worker SDK + 參照 ObservabilityDemo.Shared)
@@ -144,7 +144,7 @@ service RiskService {
 - [x] 從 Kafka headers 提取 traceparent → 用 `parentContext` 建立 Consumer span (同 TraceId)
 - [x] 每個 topic 對應不同的通知 log 訊息 (對應 Program.cs 中 `SERVICE_NOTIFICATION` 區塊)
 - [x] 確認 `dotnet build` 通過
-- [ ] 確認能成功連線 Kafka 並消費訊息
+- [x] 確認能成功連線 Kafka 並消費訊息
 
 ---
 
@@ -238,17 +238,17 @@ service RiskService {
 
 ### 端對端驗證
 
-- [ ] `docker compose up -d` 啟動基礎設施 (含 Kafka)
-- [ ] 依序啟動: FinanceService → PlayerGameService → GatewayService → NotificationService
-- [ ] **gRPC 連通性**: Gateway 能成功呼叫 PlayerGameService 和 FinanceService
-- [ ] **Kafka 連通性**: NotificationService 能消費到 events
-- [ ] **TraceId 一致性**: 在 Tempo 查詢單一 trace，確認 span 鏈跨越所有 4 個服務
-- [ ] **Service Graph**: Tempo service graph 顯示 Gateway→PlayerGame→Finance 的 gRPC edges
-- [ ] **Kafka span 鏈**: trace 中能看到 PRODUCER→CONSUMER span 且 TraceId 一致
-- [ ] **Log 關聯**: 在 Seq/Loki 用 TraceId 過濾，能看到所有服務的 log
-- [ ] **service.name 區分**: 各服務的 log 有獨立的 service.name
-- [ ] **Kafka UI**: localhost:8080 能看到 topic 列表和訊息內容
-- [ ] **錯誤情境**: 餘額不足、支付驗證失敗等情境仍正常觸發並產生對應 log/span status
+- [x] `docker compose up -d` 啟動基礎設施 (含 Kafka)
+- [x] 依序啟動: FinanceService → PlayerGameService → GatewayService → NotificationService
+- [x] **gRPC 連通性**: Gateway 能成功呼叫 PlayerGameService 和 FinanceService
+- [x] **Kafka 連通性**: NotificationService 能消費到 events
+- [x] **TraceId 一致性**: 在 Tempo 查詢單一 trace，確認 span 鏈跨越所有 4 個服務
+- [x] **Service Graph**: Tempo service graph 顯示 Gateway→PlayerGame→Finance 的 gRPC edges
+- [x] **Kafka span 鏈**: trace 中能看到 PRODUCER→CONSUMER span 且 TraceId 一致
+- [x] **Log 關聯**: 在 Seq/Loki 用 TraceId 過濾，能看到所有服務的 log
+- [x] **service.name 區分**: 各服務的 log 有獨立的 service.name
+- [x] **Kafka UI**: localhost:8080 能看到 topic 列表和訊息內容 (修復 dual-listener)
+- [x] **錯誤情境**: 餘額不足、支付驗證失敗等情境仍正常觸發並產生對應 log/span status
 
 ---
 
