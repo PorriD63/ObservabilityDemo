@@ -2,17 +2,30 @@
 
 ## 專案概述
 
-本專案是一個可觀測性（Observability）綜合演示專案，涵蓋日誌、指標與追蹤。單一 .NET 10.0 主控台應用程式（`dotnet-demo/`）模擬遊戲平台的 7 個微服務，產生真實的遙測數據，並整合 Seq、ELK Stack 及 Grafana Stack 等工具進行收集與視覺化。
+本專案是一個可觀測性（Observability）綜合演示專案，涵蓋日誌、指標與追蹤。採用 4 個獨立 .NET 10.0 微服務專案，透過 **gRPC** 做同步通訊、**Kafka** 做非同步 event-driven，產生真實的分散式遙測數據，並整合 Seq、ELK Stack 及 Grafana Stack 等工具進行收集與視覺化。
 
-### 模擬微服務
+### 微服務架構
 
-1. **ApiGateway** — 入口閘道
-2. **PlayerService** — 玩家服務
-3. **GameService** — 遊戲服務
-4. **WalletService** — 錢包服務
-5. **PaymentService** — 支付服務
-6. **RiskService** — 風險控管服務
-7. **NotificationService** — 通知服務
+| 專案 | 包含服務 | 角色 | 埠號 |
+|------|---------|------|------|
+| **GatewayService** | ApiGateway | Workflow 編排器，透過 gRPC 呼叫下游 | 5100 |
+| **PlayerGameService** | PlayerService + GameService | gRPC server，玩家登入/驗證 + 遊戲操作 | 5200 |
+| **FinanceService** | WalletService + PaymentService + RiskService | gRPC server，錢包/支付/風控 + Kafka producer | 5300 |
+| **NotificationService** | NotificationService | Worker SDK，純 Kafka consumer | — |
+
+### 通訊模式
+
+**gRPC (同步):**
+- Gateway → PlayerGameService: 登入、驗證、遊戲開始、下注、遊戲結果
+- Gateway → FinanceService: 存款、提款、結算、餘額更新
+- PlayerGameService → FinanceService: 餘額查詢
+
+**Kafka (非同步):**
+- `bet-settled` → NotificationService
+- `payment-processed` → NotificationService
+- `withdrawal-approved` / `withdrawal-flagged` → NotificationService
+- `workflow-completed` → NotificationService
+- `insufficient-balance` → NotificationService
 
 ---
 
@@ -20,14 +33,21 @@
 
 ```
 SeqDemo/
-├── dotnet-demo/
-│   ├── Program.cs                       # 核心程式碼：7 個 ActivitySource、Serilog 設定、三個工作流程實作
-│   ├── DotnetSeqDemo.csproj             # 專案定義與相依套件（Serilog, OpenTelemetry）
-│   └── ERROR_AND_WARNING_SCENARIOS.md   # 錯誤/警告情境完整目錄
-├── config/                              # 各元件設定（OTel Collector、Grafana、Loki、Tempo、Prometheus、Elasticsearch）
-├── docker-compose.yml                   # 定義 9 個可觀測性服務容器
-├── start-all.bat                        # Windows 快速啟動腳本
-└── start-all.sh                         # Linux/Mac 快速啟動腳本
+├── SeqDemo.sln
+├── protos/                            # 共享 .proto 定義
+│   ├── player_game.proto              # PlayerService、GameService RPC 定義
+│   └── finance.proto                  # WalletService、PaymentService、RiskService RPC 定義
+├── src/
+│   ├── SeqDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
+│   ├── SeqDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
+│   ├── SeqDemo.PlayerGameService/     # Port 5200, gRPC server
+│   ├── SeqDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
+│   └── SeqDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
+├── dotnet-demo/                       # 保留原始單體版本作為參考
+├── config/                            # 各元件設定（OTel Collector、Grafana、Loki、Tempo、Prometheus、Elasticsearch）
+├── docker-compose.yml                 # 可觀測性基礎設施 + Kafka (KRaft)
+├── start-all.bat                      # Windows 快速啟動腳本
+└── start-all.sh                       # Linux/Mac 快速啟動腳本
 ```
 
 ---
@@ -37,7 +57,10 @@ SeqDemo/
 ### 應用程式端
 - **語言：** C# / .NET 10.0
 - **日誌：** Serilog 4.3 搭配 OpenTelemetry sink，透過 OTLP 匯出
-- **追蹤：** OpenTelemetry 1.11（每個模擬微服務各一個 `ActivitySource`）
+- **追蹤：** OpenTelemetry 1.15（每個微服務各一個 `ActivitySource`）
+- **同步通訊：** gRPC (Grpc.Net.Client 2.76.0 / Grpc.AspNetCore)
+- **非同步通訊：** Kafka (Confluent.Kafka 2.13.0)
+- **Trace 傳播：** gRPC 自動 (OTel Instrumentation)、Kafka 手動 (W3C traceparent in headers)
 - **傳輸協定：** OTLP (gRPC) 至 Collector
 
 ### 基礎設施（Docker Compose）
@@ -49,37 +72,41 @@ SeqDemo/
 - **Prometheus** — 指標後端
 - **Elasticsearch** — 搜尋與分析引擎
 - **Kibana** — Elasticsearch 視覺化介面
+- **Kafka** (KRaft mode, confluentinc/cp-kafka:7.8.0) — 非同步訊息佇列
+- **Kafka UI** (provectuslabs/kafka-ui) — Kafka 管理介面
 
 ---
 
 ## 資料流架構
 
 ```
-dotnet-demo (Program.cs)
-    │
-    ▼ OTLP/gRPC :4317
-    │
-OTel Collector
-    │
-    ├──▶ Seq            (:5341)
-    ├──▶ Loki           (:3100)
-    ├──▶ Tempo          (:3200)
-    ├──▶ Elasticsearch  (:9200)
-    └──▶ Prometheus     (:9090)
+GatewayService ──gRPC──▶ PlayerGameService ──gRPC──▶ FinanceService
+      │                                                    │
+      │                                              Kafka produce
+      │                                                    │
+      └──────── Kafka produce ──────────────▶ NotificationService (Kafka consume)
+
+所有服務 ──OTLP/gRPC :4317──▶ OTel Collector ──▶ Seq / Loki / Tempo / Prometheus / Elasticsearch
 ```
 
 ### 服務埠號
 
-| 服務              | 埠號                    |
-|-------------------|------------------------|
-| OTel Collector    | 4317 (gRPC)、4318 (HTTP) |
-| Seq               | 5341                   |
-| Grafana           | 3000                   |
-| Prometheus        | 9090                   |
-| Loki              | 3100                   |
-| Tempo             | 3200                   |
-| Elasticsearch     | 9200                   |
-| Kibana            | 5601                   |
+| 服務 | 埠號 | 協定 |
+|------|------|------|
+| GatewayService | 5100 | gRPC client only |
+| PlayerGameService | 5200 | gRPC server |
+| FinanceService | 5300 | gRPC server |
+| NotificationService | — | Kafka consumer only |
+| Kafka | 9092 | Kafka protocol |
+| Kafka UI | 8080 | HTTP |
+| OTel Collector | 4317 (gRPC)、4318 (HTTP) | OTLP |
+| Seq | 5341 | HTTP |
+| Grafana | 3000 | HTTP |
+| Prometheus | 9090 | HTTP |
+| Loki | 3100 | HTTP |
+| Tempo | 3200 | HTTP |
+| Elasticsearch | 9200 | HTTP |
+| Kibana | 5601 | HTTP |
 
 ---
 
@@ -101,18 +128,27 @@ start-all.bat
 # 1. 啟動基礎設施（等待約 30 秒讓所有服務初始化完成）
 docker compose up -d
 
-# 2. 還原套件並執行應用程式
-cd dotnet-demo
-dotnet restore
-dotnet build
-dotnet run
+# 2. 建置整個解決方案
+dotnet build SeqDemo.sln
 
-# 3. 關閉服務堆疊
+# 3. 依序啟動 4 個微服務（各開一個終端）
+cd src/SeqDemo.FinanceService && dotnet run         # 先啟動 gRPC server
+cd src/SeqDemo.PlayerGameService && dotnet run       # 再啟動 gRPC server
+cd src/SeqDemo.GatewayService && dotnet run          # 啟動 workflow 編排器
+cd src/SeqDemo.NotificationService && dotnet run     # 啟動 Kafka consumer
+
+# 4. 關閉服務堆疊
 docker compose down          # 保留 volumes
 docker compose down -v       # 移除 volumes
 
-# 4. 檢視特定服務日誌
+# 5. 檢視特定服務日誌
 docker compose logs <service>
+```
+
+### 原始單體版本
+
+```bash
+cd dotnet-demo && dotnet run
 ```
 
 ---
@@ -134,9 +170,15 @@ docker compose logs <service>
 ## 遙測模式
 
 - Serilog 搭配 OpenTelemetry sink，透過 OTLP 匯出日誌
-- 每個模擬微服務各有一個 OpenTelemetry `ActivitySource`，用於分散式追蹤
+- 每個微服務各有獨立的 `ActivitySource`，用於分散式追蹤
+- gRPC 通訊：OTel Instrumentation 自動傳播 W3C traceparent（零配置）
+- Kafka 通訊：手動注入/提取 traceparent 到 message headers，用 `parentContext` 接續同一 Trace
 - 透過 `LogContext` 推送結構化日誌屬性（TraceId、CorrelationId、UserId、SessionId）
 - 豐富的巢狀物件（LoginContext、BetDetails、RiskAssessment 等）作為結構化日誌資料
+
+### TraceId 傳播
+
+同一個 Workflow 的所有操作（跨 4 個 process、跨 gRPC + Kafka）共用同一個 TraceId。在 Tempo/Seq 中查詢一個 TraceId 即可看到完整的 span 鏈。
 
 ### 日誌分析常用欄位
 
@@ -148,6 +190,7 @@ docker compose logs <service>
 | `SessionId`     | 會話 ID                                          |
 | `WorkflowName`  | 工作流程名稱                                      |
 | `WorkflowStep`  | 具體流程步驟（例如 `5-PlaceBet`）                   |
+| `service.name`  | 各服務獨立的 service.name                          |
 
 **查詢範例：** 若要尋找特定使用者的下注歷史，請過濾 `UserId` 並篩選 `WorkflowName = 'BettingWorkflow'`。
 
@@ -155,10 +198,11 @@ docker compose logs <service>
 
 ## 程式碼風格與規範
 
-- C# 啟用可為 null 的參考型別與 implicit usings（見 `DotnetSeqDemo.csproj`）
+- C# 啟用可為 null 的參考型別與 implicit usings
 - 4 空白縮排
 - 公開型別與成員使用 `PascalCase`，區域變數與參數使用 `camelCase`
-- 日誌與 enrichment 模式請維持與 `dotnet-demo/Program.cs` 一致
+- 共用邏輯放在 `SeqDemo.Shared` 專案中
+- Proto 定義放在 `protos/` 目錄
 - 變更應聚焦且最小化
 
 ---
@@ -199,4 +243,6 @@ docker compose logs <service>
 
 - **基礎設施未啟動：** 檢查 `docker logs <container_name>`
 - **應用程式連線失敗：** 確保程式能成功連接到 `localhost:4317`（OTel Collector）
+- **Kafka 連線失敗：** 確保 Kafka 在 `localhost:9092` 運行中
+- **gRPC 連線失敗：** 確保 FinanceService (5300) 和 PlayerGameService (5200) 先於 GatewayService 啟動
 - **服務初始化：** 啟動基礎設施後，請等待約 30 秒讓所有服務初始化完成

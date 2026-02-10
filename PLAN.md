@@ -223,16 +223,16 @@ service RiskService {
 ### Phase 6: 整合與文件
 
 **解決方案：**
-- [ ] 建立 `SeqDemo.sln`，加入所有 5 個專案
-- [ ] 確認 `dotnet build SeqDemo.sln` 全部通過
+- [x] 建立 `SeqDemo.sln`，加入所有 5 個專案
+- [x] 確認 `dotnet build SeqDemo.sln` 全部通過
 
 **啟動腳本：**
-- [ ] 更新 `start-all.bat` — 啟動 docker compose + 依序啟動 4 個服務
-- [ ] 更新 `start-all.sh` — 同上
+- [x] 更新 `start-all.bat` — 啟動 docker compose + 依序啟動 4 個服務
+- [x] 更新 `start-all.sh` — 同上
 
 **文件：**
-- [ ] 更新 `CLAUDE.md` — 反映新架構、新目錄結構、新服務埠號
-- [ ] 更新 `README.md` — 反映新架構
+- [x] 更新 `CLAUDE.md` — 反映新架構、新目錄結構、新服務埠號
+- [x] 更新 `README.md` — 反映新架構
 
 ---
 

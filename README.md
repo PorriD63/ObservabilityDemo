@@ -1,41 +1,62 @@
 # 遊戲平台可觀測性 Demo
 
-此專案使用單一 .NET 應用程式模擬遊戲平台的多個微服務，產生結構化日誌與分散式追蹤，並透過完整的可觀測性（Observability）基礎設施進行收集與視覺化。
+此專案使用 4 個獨立 .NET 微服務，透過 **gRPC** (同步) 和 **Kafka** (非同步) 通訊，模擬遊戲平台的完整業務流程，產生真實的分散式追蹤與結構化日誌，並透過完整的可觀測性（Observability）基礎設施進行收集與視覺化。
 
 ## 架構概覽
 
-.NET 應用程式以單一 Program 模擬以下 7 個微服務：
+### 微服務
 
-| 微服務 | 說明 |
-|---|---|
-| **ApiGateway** | 所有 Workflow 的入口閘道 |
-| **PlayerService** | 玩家驗證與授權 |
-| **GameService** | 遊戲開局與下注管理 |
-| **WalletService** | 餘額管理與結算 |
-| **PaymentService** | 支付處理 |
-| **RiskService** | 風險評估與詐欺偵測 |
-| **NotificationService** | 通知派發 |
+| 專案 | 包含服務 | 角色 | 埠號 |
+|------|---------|------|------|
+| **GatewayService** | ApiGateway | Workflow 編排器，透過 gRPC 呼叫下游 | 5100 |
+| **PlayerGameService** | PlayerService + GameService | gRPC server，玩家登入/驗證 + 遊戲操作 | 5200 |
+| **FinanceService** | WalletService + PaymentService + RiskService | gRPC server，錢包/支付/風控 + Kafka producer | 5300 |
+| **NotificationService** | NotificationService | Worker SDK，純 Kafka consumer | — |
 
-每個微服務擁有獨立的 `ActivitySource`，產生具有服務間 Client/Server 關係的 Span，模擬真實的分散式呼叫鏈。
+### 通訊模式
+
+```
+GatewayService ──gRPC──▶ PlayerGameService ──gRPC──▶ FinanceService
+      │                                                    │
+      │                                              Kafka produce
+      │                                                    │
+      └──────── Kafka produce ──────────────▶ NotificationService (Kafka consume)
+```
+
+**gRPC (同步):** Gateway 呼叫 PlayerGameService 和 FinanceService 編排工作流程
+**Kafka (非同步):** FinanceService/GatewayService 發布事件，NotificationService 消費並處理通知
+
+### TraceId 端對端傳播
+
+同一個 Workflow 的所有操作（跨 4 個 process、跨 gRPC + Kafka）共用同一個 TraceId：
+- **gRPC**: OTel Instrumentation 自動傳播 W3C traceparent（零配置）
+- **Kafka**: 手動注入/提取 traceparent 到 message headers，用 `parentContext` 接續同一 Trace
 
 ## 專案結構
 
 ```
-.
-├── docker-compose.yml          # 可觀測性基礎設施
-├── SeqDemo.sln                 # Visual Studio Solution
-├── start-all.bat / .sh         # 一鍵啟動腳本
-├── dotnet-demo/                # .NET 應用程式（模擬多微服務）
-│   ├── Program.cs
-│   ├── DotnetSeqDemo.csproj
-│   └── README.md
-└── config/                     # 各服務設定檔
-    ├── otel-collector/         # OpenTelemetry Collector
-    ├── grafana/                # Grafana Dashboards & Datasources
-    ├── prometheus/             # Prometheus
-    ├── tempo/                  # Tempo (分散式追蹤)
-    ├── loki/                   # Loki (日誌聚合)
-    └── elasticsearch/          # Elasticsearch Index Template
+SeqDemo/
+├── SeqDemo.sln
+├── protos/                            # 共享 .proto 定義
+│   ├── player_game.proto
+│   └── finance.proto
+├── src/
+│   ├── SeqDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
+│   ├── SeqDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
+│   ├── SeqDemo.PlayerGameService/     # Port 5200, gRPC server
+│   ├── SeqDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
+│   └── SeqDemo.NotificationService/   # Worker SDK, 純 Kafka consumer
+├── dotnet-demo/                       # 保留原始單體版本作為參考
+├── config/                            # 各服務設定檔
+│   ├── otel-collector/                # OpenTelemetry Collector
+│   ├── grafana/                       # Grafana Dashboards & Datasources
+│   ├── prometheus/                    # Prometheus
+│   ├── tempo/                         # Tempo (分散式追蹤)
+│   ├── loki/                          # Loki (日誌聚合)
+│   └── elasticsearch/                 # Elasticsearch Index Template
+├── docker-compose.yml                 # 可觀測性基礎設施 + Kafka
+├── start-all.bat                      # Windows 快速啟動腳本
+└── start-all.sh                       # Linux/Mac 快速啟動腳本
 ```
 
 ## 可觀測性基礎設施
@@ -52,15 +73,17 @@
 | **Prometheus** | 9090 | Metrics 儲存與查詢 |
 | **Elasticsearch** | 9200 | 日誌儲存與搜尋 |
 | **Kibana** | 5601 | Elasticsearch 視覺化 |
+| **Kafka** | 9092 | 非同步訊息佇列 (KRaft mode) |
+| **Kafka UI** | 8080 | Kafka 管理介面 |
 
 資料流向：
 
 ```
-.NET App ──OTLP/gRPC──▶ OTel Collector ──▶ Seq (Logs)
-                                        ──▶ Loki (Logs)
-                                        ──▶ Tempo (Traces)
-                                        ──▶ Prometheus (Metrics)
-                                        ──▶ Elasticsearch (Logs)
+4 個微服務 ──OTLP/gRPC──▶ OTel Collector ──▶ Seq (Logs)
+                                           ──▶ Loki (Logs)
+                                           ──▶ Tempo (Traces)
+                                           ──▶ Prometheus (Metrics)
+                                           ──▶ Elasticsearch (Logs)
 ```
 
 ## 快速開始
@@ -68,27 +91,52 @@
 ### 1. 啟動可觀測性基礎設施
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 等待約 30 秒讓所有服務啟動完成。
 
-### 2. 運行 .NET 應用程式
+### 2. 建置解決方案
 
 ```bash
-cd dotnet-demo
-dotnet restore
-dotnet run
+dotnet build SeqDemo.sln
 ```
 
-應用程式會每 2 秒產生一組 Workflow 日誌，透過 OTLP/gRPC 發送至 OTel Collector。
+### 3. 依序啟動微服務
 
-### 3. 查看日誌與追蹤
+在不同終端依序啟動（gRPC server 需先於 client 啟動）：
+
+```bash
+# 終端 1: FinanceService (gRPC server, port 5300)
+cd src/SeqDemo.FinanceService && dotnet run
+
+# 終端 2: PlayerGameService (gRPC server, port 5200)
+cd src/SeqDemo.PlayerGameService && dotnet run
+
+# 終端 3: GatewayService (workflow orchestrator, port 5100)
+cd src/SeqDemo.GatewayService && dotnet run
+
+# 終端 4: NotificationService (Kafka consumer)
+cd src/SeqDemo.NotificationService && dotnet run
+```
+
+或使用一鍵啟動腳本：
+
+```bash
+# Windows
+start-all.bat
+
+# Linux / Mac
+./start-all.sh
+```
+
+### 4. 查看日誌與追蹤
 
 - **Seq**: http://localhost:5341 — 結構化日誌查詢
 - **Grafana**: http://localhost:3000 — 儀表板（帳號：admin / admin）
 - **Kibana**: http://localhost:5601 — Elasticsearch 日誌
 - **Prometheus**: http://localhost:9090 — Metrics 查詢
+- **Kafka UI**: http://localhost:8080 — Kafka topic 與訊息管理
 
 ## 模擬的遊戲平台 Workflow
 
@@ -140,6 +188,17 @@ dotnet run
    - 核准：包含 `ApprovalDetails` 物件：核准時間、預計完成時間
    - 標記：包含 `FlagDetails` 物件：原因、需人工審核
 
+## Kafka Topics
+
+| Topic | Producer | 說明 |
+|-------|----------|------|
+| `bet-settled` | FinanceService | 注單結算完成 |
+| `payment-processed` | FinanceService | 支付處理完成 |
+| `withdrawal-approved` | FinanceService | 提款已核准 |
+| `withdrawal-flagged` | FinanceService | 提款需人工審核 |
+| `workflow-completed` | GatewayService | 工作流程完成 |
+| `insufficient-balance` | GatewayService | 餘額不足 |
+
 ## 錯誤與警告模擬
 
 應用程式透過機率性故障注入產生各種錯誤與警告場景：
@@ -160,7 +219,7 @@ dotnet run
 
 ### Workflow 追蹤 ID
 
-- **`TraceId`**: 追蹤單個 Workflow 的所有步驟 (UUID 格式)
+- **`TraceId`**: 追蹤單個 Workflow 的所有步驟 (跨服務一致)
 - **`CorrelationId`**: 關聯相關的 Workflow (UUID 格式)
 - **`UserId`**: 玩家 ID (例如: `USER_123`)
 
@@ -169,7 +228,7 @@ dotnet run
 - `WorkflowName`: Workflow 名稱 (`BettingWorkflow`, `DepositWorkflow`, `WithdrawalWorkflow`)
 - `WorkflowStep`: Workflow 步驟 (例如: `1-Login`, `5-PlaceBet`)
 - `EventType`: 事件類型 (`PlayerLogin`, `BetPlaced`, `BetSettled` 等)
-- `ServiceName`: 微服務名稱 (`ApiGateway`, `PlayerService` 等)
+- `service.name`: 微服務名稱（各服務獨立）
 
 ### 遊戲相關 ID
 
@@ -222,9 +281,11 @@ group by WorkflowName
 
 ## 技術棧
 
-- **.NET 10.0** / C# 10.0
+- **.NET 10.0** / C#
+- **gRPC** (Grpc.AspNetCore / Grpc.Net.Client) — 同步服務間通訊
+- **Kafka** (Confluent.Kafka, KRaft mode) — 非同步事件驅動
 - **Serilog** — 結構化日誌 + OpenTelemetry Sink
-- **OpenTelemetry** — 分散式追蹤 (OTLP/gRPC)
+- **OpenTelemetry** — 分散式追蹤 (OTLP/gRPC) + gRPC/AspNetCore Instrumentation
 - **OpenTelemetry Collector** — 遙測資料路由與轉發
 - **Seq** — 結構化日誌平台
 - **Grafana** + **Tempo** + **Loki** + **Prometheus** — 可觀測性全家桶
@@ -234,17 +295,18 @@ group by WorkflowName
 
 ```bash
 # 停止可觀測性基礎設施
-docker-compose down
+docker compose down
 
 # 清除所有資料（含 volumes）
-docker-compose down -v
+docker compose down -v
 ```
 
-停止 .NET 應用程式：按 `Ctrl+C`
+停止微服務：按 `Ctrl+C` 或使用啟動腳本的停止功能。
 
 ## 注意事項
 
 - 此為 Demo 環境，未設置身份驗證
 - 生產環境請務必啟用各服務的身份驗證功能
-- 所有應用程式每 2 秒發送一次日誌
+- 所有 Workflow 每 2 秒發送一次
 - 事件和數據都是隨機生成的模擬數據
+- 啟動順序重要：基礎設施 → FinanceService → PlayerGameService → GatewayService → NotificationService
