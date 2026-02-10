@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+option csharp_namespace = "SeqDemo.Shared.Protos";
+
+package player_game;
+
+// PlayerService - 玩家登入與驗證
+service PlayerService {
+  rpc Login (LoginRequest) returns (LoginResponse);
+  rpc Authenticate (AuthenticateRequest) returns (AuthenticateResponse);
+}
+
+// GameService - 遊戲開始、下注、結果
+service GameService {
+  rpc StartGame (StartGameRequest) returns (StartGameResponse);
+  rpc PlaceBet (PlaceBetRequest) returns (PlaceBetResponse);
+  rpc GetGameResult (GetGameResultRequest) returns (GetGameResultResponse);
+}
+
+// --- PlayerService Messages ---
+
+message LoginRequest {
+  string user_id = 1;
+  string session_id = 2;
+}
+
+message LoginResponse {
+  bool success = 1;
+  string ip = 2;
+  string device = 3;
+  string browser = 4;
+  string location = 5;
+}
+
+message AuthenticateRequest {
+  string user_id = 1;
+  string session_id = 2;
+}
+
+message AuthenticateResponse {
+  bool success = 1;
+  string auth_method = 2;
+  string token = 3;
+  string role = 4;
+}
+
+// --- GameService Messages ---
+
+message StartGameRequest {
+  string user_id = 1;
+}
+
+message StartGameResponse {
+  string game_id = 1;
+  string table_id = 2;
+  string game_type = 3;
+  string dealer = 4;
+  int32 min_bet = 5;
+  int32 max_bet = 6;
+}
+
+message PlaceBetRequest {
+  string user_id = 1;
+  string game_id = 2;
+  int32 bet_amount = 3;
+  string bet_type = 4;
+  int32 current_balance = 5;
+  string balance_currency = 6;
+}
+
+message PlaceBetResponse {
+  bool success = 1;
+  string bet_id = 2;
+  int32 adjusted_amount = 3;
+  string bet_type = 4;
+  string error_type = 5;
+  string error_message = 6;
+}
+
+message GetGameResultRequest {
+  string game_id = 1;
+}
+
+message GetGameResultResponse {
+  string result = 1;
+  string cards = 2;
+  string game_round = 3;
+}

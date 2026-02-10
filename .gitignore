@@ -24,23 +24,18 @@ nodejs-demo/dist-ssr/
 nodejs-demo/*.local
 
 # .NET
-dotnet-demo/bin/
-dotnet-demo/obj/
-dotnet-demo/*.user
-dotnet-demo/*.suo
-dotnet-demo/*.cache
-dotnet-demo/*.log
-dotnet-demo/[Dd]ebug/
-dotnet-demo/[Rr]elease/
-dotnet-demo/x64/
-dotnet-demo/x86/
-dotnet-demo/[Aa][Rr][Mm]/
-dotnet-demo/[Aa][Rr][Mm]64/
-dotnet-demo/bld/
-dotnet-demo/[Bb]in/
-dotnet-demo/[Oo]bj/
-dotnet-demo/[Ll]og/
-dotnet-demo/[Ll]ogs/
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+*.cache
 
 # Visual Studio
 .vs/

@@ -95,35 +95,34 @@ service RiskService {
 ### Phase 1: Proto 定義 + 共享函式庫 (SeqDemo.Shared)
 
 **Proto 檔案：**
-- [ ] `protos/player_game.proto` — PlayerService、GameService 的 RPC 定義 (含 request/response messages)
-- [ ] `protos/finance.proto` — WalletService、PaymentService、RiskService 的 RPC 定義
+- [x] `protos/player_game.proto` — PlayerService、GameService 的 RPC 定義 (含 request/response messages)
+- [x] `protos/finance.proto` — WalletService、PaymentService、RiskService 的 RPC 定義
 
 **共享函式庫 `src/SeqDemo.Shared/`：**
-- [ ] 建立 `SeqDemo.Shared.csproj` (含所有共用套件參照)
-- [ ] `Constants/ServiceNames.cs` — 7 個微服務名稱常數
-- [ ] `Constants/KafkaTopics.cs` — 5 個 Kafka topic 名稱常數
-- [ ] `Telemetry/ActivityEnricher.cs` — 從 Program.cs 搬出，自動注入 TraceId/SpanId 到 log
-- [ ] `Telemetry/TelemetrySetup.cs` — 集中 Serilog + TracerProvider 設定（支援 gRPC server/client instrumentation）
-- [ ] `Kafka/KafkaProducer.cs` — Produce + 注入 W3C traceparent 到 Kafka headers
-- [ ] `Kafka/KafkaConsumer.cs` — Consume + 從 headers 提取 traceparent，用 parentContext 接續同一 Trace
-- [ ] `Events/BetSettledEvent.cs` — record DTO
-- [ ] `Events/PaymentProcessedEvent.cs` — record DTO
-- [ ] `Events/WithdrawalApprovedEvent.cs` — record DTO
-- [ ] `Events/WithdrawalFlaggedEvent.cs` — record DTO
-- [ ] `Events/WorkflowCompletedEvent.cs` — record DTO
-- [ ] `Events/InsufficientBalanceEvent.cs` — record DTO
-- [ ] 確認 `dotnet build` 通過
+- [x] 建立 `SeqDemo.Shared.csproj` (含所有共用套件參照)
+- [x] `Constants/ServiceNames.cs` — 7 個微服務名稱常數
+- [x] `Constants/KafkaTopics.cs` — 6 個 Kafka topic 名稱常數
+- [x] `Telemetry/ActivityEnricher.cs` — 從 Program.cs 搬出，自動注入 TraceId/SpanId 到 log
+- [x] `Telemetry/TelemetrySetup.cs` — 集中 Serilog + TracerProvider 設定（支援 gRPC server/client instrumentation）
+- [x] `Kafka/KafkaProducer.cs` — Produce + 注入 W3C traceparent 到 Kafka headers
+- [x] `Kafka/KafkaConsumer.cs` — Consume + 從 headers 提取 traceparent，用 parentContext 接續同一 Trace
+- [x] `Events/BetSettledEvent.cs` — record DTO
+- [x] `Events/PaymentProcessedEvent.cs` — record DTO
+- [x] `Events/WithdrawalApprovedEvent.cs` — record DTO
+- [x] `Events/WithdrawalFlaggedEvent.cs` — record DTO
+- [x] `Events/WorkflowCompletedEvent.cs` — record DTO
+- [x] `Events/InsufficientBalanceEvent.cs` — record DTO
+- [x] 確認 `dotnet build` 通過
 
-**套件：**
+**套件（實際安裝版本）：**
 - Serilog 4.3, Serilog.Sinks.Console 6.1.1, Serilog.Sinks.OpenTelemetry 4.2
-- OpenTelemetry 1.11.2, OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.2
-- OpenTelemetry.Extensions.Hosting
-- **Grpc.AspNetCore** (server 端)
-- **Grpc.Net.Client** (client 端)
-- **Google.Protobuf**, **Grpc.Tools** (proto 編譯)
-- **OpenTelemetry.Instrumentation.GrpcNetClient** (自動傳播 traceparent 到 gRPC calls)
-- **OpenTelemetry.Instrumentation.AspNetCore** (自動建立 server span for incoming gRPC)
-- **Confluent.Kafka 2.8**
+- OpenTelemetry 1.15.0, OpenTelemetry.Exporter.OpenTelemetryProtocol 1.15.0
+- OpenTelemetry.Extensions.Hosting 1.15.0
+- **Grpc.Net.Client 2.76.0** (client 端)
+- **Google.Protobuf 3.33.5**, **Grpc.Tools 2.78.0** (proto 編譯)
+- **OpenTelemetry.Instrumentation.GrpcNetClient 1.12.0-beta.1** (自動傳播 traceparent 到 gRPC calls)
+- **OpenTelemetry.Instrumentation.AspNetCore 1.15.0** (自動建立 server span for incoming gRPC)
+- **Confluent.Kafka 2.13.0**
 
 > **gRPC 選型理由：** gRPC 使用 HTTP/2，原生支援 metadata 傳播。OTel.Instrumentation.GrpcNetClient + AspNetCore 自動注入/提取 W3C traceparent，trace context 傳播零配置。在 Tempo service graph 中會顯示為 `rpc.method` + `rpc.service` 屬性。
 

@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+option csharp_namespace = "SeqDemo.Shared.Protos";
+
+package finance;
+
+// WalletService - 錢包餘額、結算、存款、提款
+service WalletService {
+  rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse);
+  rpc Settlement (SettlementRequest) returns (SettlementResponse);
+  rpc UpdateBalance (UpdateBalanceRequest) returns (UpdateBalanceResponse);
+  rpc InitiateDeposit (InitiateDepositRequest) returns (InitiateDepositResponse);
+  rpc CreditBalance (CreditBalanceRequest) returns (CreditBalanceResponse);
+  rpc RequestWithdrawal (RequestWithdrawalRequest) returns (RequestWithdrawalResponse);
+}
+
+// PaymentService - 支付驗證、處理、提款核准
+service PaymentService {
+  rpc ValidatePayment (ValidatePaymentRequest) returns (ValidatePaymentResponse);
+  rpc ProcessPayment (ProcessPaymentRequest) returns (ProcessPaymentResponse);
+  rpc ApproveWithdrawal (ApproveWithdrawalRequest) returns (ApproveWithdrawalResponse);
+}
+
+// RiskService - 風險評估
+service RiskService {
+  rpc AssessRisk (AssessRiskRequest) returns (AssessRiskResponse);
+}
+
+// --- WalletService Messages ---
+
+message GetBalanceRequest {
+  string user_id = 1;
+}
+
+message GetBalanceResponse {
+  int32 balance = 1;
+  string currency = 2;
+  string wallet_id = 3;
+}
+
+message SettlementRequest {
+  string user_id = 1;
+  string bet_id = 2;
+  int32 bet_amount = 3;
+  string bet_type = 4;
+  string game_result = 5;
+}
+
+message SettlementResponse {
+  bool is_win = 1;
+  int32 win_amount = 2;
+  int32 profit = 3;
+  string transaction_id = 4;
+}
+
+message UpdateBalanceRequest {
+  string user_id = 1;
+  string transaction_id = 2;
+  int32 profit = 3;
+  int32 current_balance = 4;
+}
+
+message UpdateBalanceResponse {
+  int32 previous_balance = 1;
+  int32 new_balance = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+message InitiateDepositRequest {
+  string user_id = 1;
+  int32 amount = 2;
+  string currency = 3;
+  string payment_method = 4;
+}
+
+message InitiateDepositResponse {
+  bool success = 1;
+  string deposit_id = 2;
+}
+
+message CreditBalanceRequest {
+  string user_id = 1;
+  double amount = 2;
+  string transaction_id = 3;
+}
+
+message CreditBalanceResponse {
+  int32 new_balance = 1;
+}
+
+message RequestWithdrawalRequest {
+  string user_id = 1;
+  int32 amount = 2;
+  string currency = 3;
+  string withdrawal_method = 4;
+  string account_info = 5;
+  int32 user_balance = 6;
+}
+
+message RequestWithdrawalResponse {
+  bool success = 1;
+  string error_type = 2;
+  string error_message = 3;
+  string withdrawal_id = 4;
+}
+
+// --- PaymentService Messages ---
+
+message ValidatePaymentRequest {
+  string user_id = 1;
+  int32 amount = 2;
+  string payment_method = 3;
+}
+
+message ValidatePaymentResponse {
+  bool is_valid = 1;
+  string processor_id = 2;
+  string failure_reason = 3;
+}
+
+message ProcessPaymentRequest {
+  string user_id = 1;
+  int32 amount = 2;
+  string payment_method = 3;
+  string processor_id = 4;
+}
+
+message ProcessPaymentResponse {
+  bool success = 1;
+  string transaction_id = 2;
+  double fee = 3;
+  double net_amount = 4;
+  string error_code = 5;
+}
+
+message ApproveWithdrawalRequest {
+  string transaction_id = 1;
+  string user_id = 2;
+  int32 amount = 3;
+}
+
+message ApproveWithdrawalResponse {
+  bool approved = 1;
+  string approved_by = 2;
+}
+
+// --- RiskService Messages ---
+
+message AssessRiskRequest {
+  string user_id = 1;
+  int32 amount = 2;
+  string transaction_type = 3;
+}
+
+message AssessRiskResponse {
+  int32 risk_score = 1;
+  string risk_level = 2;
+  bool passed = 3;
+}
