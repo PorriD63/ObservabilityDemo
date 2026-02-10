@@ -131,6 +131,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
             using (LogContext.PushProperty("WorkflowName", workflowName))
             {
                 // 步驟 1: 玩家登入 (PlayerService.AuthenticationHandler)
+                // ApiGateway → PlayerService (CLIENT span 包裹 SERVER span，讓 Tempo 產生 service graph edge)
+                using (gatewaySource.StartActivity("call-PlayerService", ActivityKind.Client))
                 using (var stepActivity = playerSource.StartActivity("1-Login", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -163,6 +165,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 }
 
                 // 步驟 2: 玩家驗證 (PlayerService.AuthorizationHandler)
+                // ApiGateway → PlayerService
+                using (gatewaySource.StartActivity("call-PlayerService", ActivityKind.Client))
                 using (var stepActivity = playerSource.StartActivity("2-Authentication", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -196,6 +200,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 // 步驟 3: 查詢餘額 (WalletService.BalanceManager)
                 var currentBalance = random.Next(100, 10000);
                 string balanceCurrency;
+                // PlayerService → WalletService
+                using (playerSource.StartActivity("call-WalletService", ActivityKind.Client))
                 using (var stepActivity = walletSource.StartActivity("3-BalanceCheck", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "GET");
@@ -239,6 +245,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 var gameId = $"GAME_{random.Next(1, 99)}";
                 var tableId = $"TABLE_{random.Next(1, 20)}";
                 string gameType;
+                // WalletService → GameService
+                using (walletSource.StartActivity("call-GameService", ActivityKind.Client))
                 using (var stepActivity = gameSource.StartActivity("4-GameStart", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -435,6 +443,8 @@ async Task RunBettingWorkflow(CancellationToken cancellationToken)
                 var profit = winAmount - betAmount;
                 var transactionId = Guid.NewGuid().ToString();
 
+                // GameService → WalletService
+                using (gameSource.StartActivity("call-WalletService", ActivityKind.Client))
                 using (var stepActivity = walletSource.StartActivity("7-Settlement", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -593,6 +603,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     RequestedAt = DateTime.UtcNow
                 };
 
+                // ApiGateway → WalletService
+                using (gatewaySource.StartActivity("call-WalletService", ActivityKind.Client))
                 using (var stepActivity = walletSource.StartActivity("1-InitiateDeposit", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -644,6 +656,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     FailureReason = isValidationSuccess ? null : new[] { "KYC_NOT_VERIFIED", "PAYMENT_METHOD_SUSPENDED", "ACCOUNT_RESTRICTED" }[random.Next(3)]
                 };
 
+                // WalletService → PaymentService
+                using (walletSource.StartActivity("call-PaymentService", ActivityKind.Client))
                 using (var stepActivity = paymentSource.StartActivity("2-ValidatePayment", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -759,6 +773,8 @@ async Task RunDepositWorkflow(CancellationToken cancellationToken)
                     // 步驟 4: 餘額入帳 (WalletService.BalanceManager) - 僅在成功時
                     if (isSuccess)
                     {
+                        // PaymentService → WalletService
+                        using (paymentSource.StartActivity("call-WalletService", ActivityKind.Client))
                         using (var creditActivity = walletSource.StartActivity("4-CreditBalance", ActivityKind.Server))
                         {
                             creditActivity?.SetTag("http.method", "PUT");
@@ -843,6 +859,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                 var withdrawalAmount = random.Next(100, 3000);
                 var userBalance = random.Next(0, 5000);
 
+                // ApiGateway → WalletService
+                using (gatewaySource.StartActivity("call-WalletService", ActivityKind.Client))
                 using (var stepActivity = walletSource.StartActivity("1-RequestWithdrawal", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -982,6 +1000,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                 var riskLevel = riskScore < 30 ? "Low" : riskScore < 70 ? "Medium" : "High";
                 var riskPassed = riskScore < 70;
 
+                // WalletService → RiskService
+                using (walletSource.StartActivity("call-RiskService", ActivityKind.Client))
                 using (var stepActivity = riskSource.StartActivity("2-RiskAssessment", ActivityKind.Server))
                 {
                     stepActivity?.SetTag("http.method", "POST");
@@ -1055,6 +1075,8 @@ async Task RunWithdrawalWorkflow(CancellationToken cancellationToken)
                 if (riskPassed)
                 {
                     // 核准 (PaymentService.WithdrawalApprover)
+                    // RiskService → PaymentService
+                    using (riskSource.StartActivity("call-PaymentService", ActivityKind.Client))
                     using (var stepActivity = paymentSource.StartActivity("3-Approval", ActivityKind.Server))
                     {
                         stepActivity?.SetTag("http.method", "POST");
