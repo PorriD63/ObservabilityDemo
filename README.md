@@ -1,61 +1,79 @@
-# Seq 多語言日誌 Demo
+# 遊戲平台可觀測性 Demo
 
-此專案示範如何使用 Seq 集中收集來自不同語言應用程式的結構化日誌，模擬遊戲平台的各種事件。
+此專案使用單一 .NET 應用程式模擬遊戲平台的多個微服務，產生結構化日誌與分散式追蹤，並透過完整的可觀測性（Observability）基礎設施進行收集與視覺化。
+
+## 架構概覽
+
+.NET 應用程式以單一 Program 模擬以下 7 個微服務：
+
+| 微服務 | 說明 |
+|---|---|
+| **ApiGateway** | 所有 Workflow 的入口閘道 |
+| **PlayerService** | 玩家驗證與授權 |
+| **GameService** | 遊戲開局與下注管理 |
+| **WalletService** | 餘額管理與結算 |
+| **PaymentService** | 支付處理 |
+| **RiskService** | 風險評估與詐欺偵測 |
+| **NotificationService** | 通知派發 |
+
+每個微服務擁有獨立的 `ActivitySource`，產生具有服務間 Client/Server 關係的 Span，模擬真實的分散式呼叫鏈。
 
 ## 專案結構
 
 ```
 .
-├── docker-compose.yml      # Seq 服務配置
-├── golang-demo/           # Go 應用程式範例
-│   ├── main.go
-│   ├── go.mod
+├── docker-compose.yml          # 可觀測性基礎設施
+├── SeqDemo.sln                 # Visual Studio Solution
+├── start-all.bat / .sh         # 一鍵啟動腳本
+├── dotnet-demo/                # .NET 應用程式（模擬多微服務）
+│   ├── Program.cs
+│   ├── DotnetSeqDemo.csproj
 │   └── README.md
-├── nodejs-demo/           # Node.js 應用程式範例
-│   ├── index.js
-│   ├── package.json
-│   └── README.md
-└── dotnet-demo/           # .NET 應用程式範例
-    ├── Program.cs
-    ├── DotnetSeqDemo.csproj
-    └── README.md
+└── config/                     # 各服務設定檔
+    ├── otel-collector/         # OpenTelemetry Collector
+    ├── grafana/                # Grafana Dashboards & Datasources
+    ├── prometheus/             # Prometheus
+    ├── tempo/                  # Tempo (分散式追蹤)
+    ├── loki/                   # Loki (日誌聚合)
+    └── elasticsearch/          # Elasticsearch Index Template
+```
+
+## 可觀測性基礎設施
+
+透過 `docker-compose.yml` 啟動以下服務：
+
+| 服務 | 端口 | 用途 |
+|---|---|---|
+| **OpenTelemetry Collector** | 4317 (gRPC), 4318 (HTTP) | 接收應用程式的 Traces、Logs、Metrics 並轉發 |
+| **Seq** | 5341 | 結構化日誌查詢與分析 |
+| **Grafana** | 3000 | 統一視覺化儀表板（Traces / Logs / Metrics） |
+| **Tempo** | 3200 | 分散式追蹤後端 |
+| **Loki** | 3100 | 日誌聚合 |
+| **Prometheus** | 9090 | Metrics 儲存與查詢 |
+| **Elasticsearch** | 9200 | 日誌儲存與搜尋 |
+| **Kibana** | 5601 | Elasticsearch 視覺化 |
+
+資料流向：
+
+```
+.NET App ──OTLP/gRPC──▶ OTel Collector ──▶ Seq (Logs)
+                                        ──▶ Loki (Logs)
+                                        ──▶ Tempo (Traces)
+                                        ──▶ Prometheus (Metrics)
+                                        ──▶ Elasticsearch (Logs)
 ```
 
 ## 快速開始
 
-### 1. 啟動 Seq 服務
+### 1. 啟動可觀測性基礎設施
 
 ```bash
 docker-compose up -d
 ```
 
-Seq 將會在以下位置運行：
-- Web UI: http://localhost:5341
-- Ingestion endpoint: http://localhost:5341
+等待約 30 秒讓所有服務啟動完成。
 
-等待幾秒鐘讓 Seq 完全啟動後，開啟瀏覽器訪問 http://localhost:5341
-
-### 2. 運行範例應用程式
-
-你可以同時運行所有三個應用程式，它們會將日誌發送到同一個 Seq 實例。
-
-#### Go 應用程式
-
-```bash
-cd golang-demo
-go mod download
-go run main.go
-```
-
-#### Node.js 應用程式
-
-```bash
-cd nodejs-demo
-npm install
-npm start
-```
-
-#### .NET 應用程式
+### 2. 運行 .NET 應用程式
 
 ```bash
 cd dotnet-demo
@@ -63,13 +81,18 @@ dotnet restore
 dotnet run
 ```
 
-### 3. 查看日誌
+應用程式會每 2 秒產生一組 Workflow 日誌，透過 OTLP/gRPC 發送至 OTel Collector。
 
-開啟瀏覽器訪問 http://localhost:5341 即可查看所有應用程式的日誌。
+### 3. 查看日誌與追蹤
+
+- **Seq**: http://localhost:5341 — 結構化日誌查詢
+- **Grafana**: http://localhost:3000 — 儀表板（帳號：admin / admin）
+- **Kibana**: http://localhost:5601 — Elasticsearch 日誌
+- **Prometheus**: http://localhost:9090 — Metrics 查詢
 
 ## 模擬的遊戲平台 Workflow
 
-所有三個應用程式都會模擬完整的業務流程（Workflow），每個 workflow 包含多個步驟，並使用 `TraceId`、`CorrelationId`、`UserId` 串聯所有相關日誌。
+應用程式會隨機產生以下三種業務流程，每個 Workflow 包含多個步驟，並使用 `TraceId`、`CorrelationId`、`UserId` 串聯所有相關日誌。
 
 ### Workflow 1: 下注流程 (BettingWorkflow)
 
@@ -117,29 +140,38 @@ dotnet run
    - 核准：包含 `ApprovalDetails` 物件：核准時間、預計完成時間
    - 標記：包含 `FlagDetails` 物件：原因、需人工審核
 
+## 錯誤與警告模擬
+
+應用程式透過機率性故障注入產生各種錯誤與警告場景：
+
+| 場景 | 機率 |
+|---|---|
+| 餘額不足警告 | 20% |
+| 遊戲連線延遲 | 15% |
+| 餘額不足無法下注 | 10% |
+| 結算延遲 | 10% |
+| 支付處理器連線錯誤 | 8% |
+| 下注限額超出 | 5% |
+| 餘額更新失敗 | 5% |
+| 支付驗證失敗 | 5% |
+| 帳戶凍結 | 5% |
+
 ## 可用於查詢的 ID 和欄位
 
-### 🔑 Workflow 追蹤 ID（最重要！）
+### Workflow 追蹤 ID
 
-- **`TraceId`**: 追蹤單個 workflow 的所有步驟 (UUID 格式)
-  - 用途：查看完整的業務流程（從開始到結束）
-  - 範例：`TraceId = '550e8400-e29b-41d4-a716-446655440000'`
-
-- **`CorrelationId`**: 關聯相關的 workflow (UUID 格式)
-  - 用途：關聯跨多個 workflow 的事件
-  - 範例：`CorrelationId = '550e8400-e29b-41d4-a716-446655440000'`
-
+- **`TraceId`**: 追蹤單個 Workflow 的所有步驟 (UUID 格式)
+- **`CorrelationId`**: 關聯相關的 Workflow (UUID 格式)
 - **`UserId`**: 玩家 ID (例如: `USER_123`)
-  - 用途：查看特定使用者的所有活動
-  - 範例：`UserId = 'USER_123'`
 
-### 📝 Workflow 相關欄位
+### Workflow 相關欄位
 
 - `WorkflowName`: Workflow 名稱 (`BettingWorkflow`, `DepositWorkflow`, `WithdrawalWorkflow`)
 - `WorkflowStep`: Workflow 步驟 (例如: `1-Login`, `5-PlaceBet`)
 - `EventType`: 事件類型 (`PlayerLogin`, `BetPlaced`, `BetSettled` 等)
+- `ServiceName`: 微服務名稱 (`ApiGateway`, `PlayerService` 等)
 
-### 🎮 遊戲相關 ID
+### 遊戲相關 ID
 
 - `GameId`: 遊戲 ID (例如: `GAME_45`)
 - `BetId`: 注單 ID (UUID 格式)
@@ -147,60 +179,26 @@ dotnet run
 - `TransactionId`: 交易 ID (UUID 格式)
 - `TableId`: 桌台 ID (例如: `TABLE_10`)
 
-### 📊 巢狀物件欄位（使用物件形式的參數資料）
+### 巢狀物件欄位
 
 所有日誌都使用結構化的物件來儲存詳細資訊：
 
-- **LoginContext**: 登入相關資訊
-  - `LoginContext.Device`: 設備類型
-  - `LoginContext.Location`: 地區
-  - `LoginContext.IP`: IP 位址
-
-- **BetDetails**: 下注詳細資訊
-  - `BetDetails.Amount`: 下注金額
-  - `BetDetails.BetType`: 下注類型
-  - `BetDetails.RemainingBalance`: 剩餘餘額
-
-- **SettlementDetails**: 結算詳細資訊
-  - `SettlementDetails.WinAmount`: 贏得金額
-  - `SettlementDetails.Profit`: 利潤
-  - `SettlementDetails.Status`: 狀態
-
-- **RiskAssessment**: 風險評估資訊
-  - `RiskAssessment.RiskScore`: 風險分數
-  - `RiskAssessment.RiskLevel`: 風險等級
-  - `RiskAssessment.Passed`: 是否通過
-
-- **PaymentDetails**: 支付詳細資訊
-  - `PaymentDetails.Amount`: 金額
-  - `PaymentDetails.Status`: 狀態
-  - `PaymentDetails.Fee`: 手續費
+- **LoginContext**: `LoginContext.Device`, `LoginContext.Location`, `LoginContext.IP`
+- **BetDetails**: `BetDetails.Amount`, `BetDetails.BetType`, `BetDetails.RemainingBalance`
+- **SettlementDetails**: `SettlementDetails.WinAmount`, `SettlementDetails.Profit`, `SettlementDetails.Status`
+- **RiskAssessment**: `RiskAssessment.RiskScore`, `RiskAssessment.RiskLevel`, `RiskAssessment.Passed`
+- **PaymentDetails**: `PaymentDetails.Amount`, `PaymentDetails.Status`, `PaymentDetails.Fee`
 
 ## Seq 查詢範例
 
-### 🎯 追蹤完整 Workflow（最重要的功能！）
-
-**查詢某個 TraceId 的完整流程：**
+**追蹤完整 Workflow：**
 ```sql
 TraceId = '550e8400-e29b-41d4-a716-446655440000'
 ```
-這會顯示從開始到結束的所有步驟，按時間排序。
 
-**查詢某個使用者的所有下注流程：**
+**查詢特定使用者的下注流程：**
 ```sql
 UserId = 'USER_123' and WorkflowName = 'BettingWorkflow'
-```
-
-**查詢特定 Workflow 的特定步驟：**
-```sql
-WorkflowName = 'BettingWorkflow' and WorkflowStep = '5-PlaceBet'
-```
-
-### 🔍 使用巢狀物件查詢
-
-**查詢來自 iOS 設備的登入：**
-```sql
-LoginContext.Device = 'iOS'
 ```
 
 **查詢下注金額大於 100 的記錄：**
@@ -208,45 +206,9 @@ LoginContext.Device = 'iOS'
 BetDetails.Amount > 100
 ```
 
-**查詢有獲利的注單：**
-```sql
-SettlementDetails.Profit > 0
-```
-
 **查詢高風險的提款：**
 ```sql
 RiskAssessment.RiskLevel = 'High'
-```
-
-**查詢使用信用卡的存款：**
-```sql
-DepositRequest.PaymentMethod = 'CreditCard'
-```
-
-### 📊 實用查詢範例
-
-**追蹤單筆下注的完整流程：**
-
-步驟 1：找到一筆下注
-```sql
-EventType = 'BetPlaced' and BetDetails.Amount > 100
-```
-
-步驟 2：複製 TraceId，查看完整流程
-```sql
-TraceId = 'your-trace-id-from-step-1'
-```
-
-**查詢支付失敗並查看原因：**
-```sql
-EventType = 'PaymentFailed'
-```
-
-**查詢特定使用者的總盈虧：**
-```sql
-select sum(SettlementDetails.Profit) as TotalProfit
-from stream
-where UserId = 'USER_123' and EventType = 'BetSettled'
 ```
 
 **統計各 Workflow 的數量：**
@@ -256,77 +218,33 @@ where WorkflowName is not null
 group by WorkflowName
 ```
 
-**查詢各遊戲類型的下注次數：**
-```sql
-select count(*) from stream
-where EventType = 'BetPlaced'
-group by GameDetails.GameType
-```
-
-### 📖 完整查詢指南
-
 更多查詢範例和進階技巧，請參閱 [SEQ_QUERY_GUIDE.md](SEQ_QUERY_GUIDE.md)
-
-## Seq 功能特點
-
-- **結構化日誌**: 支援 JSON 格式的結構化日誌
-- **強大查詢**: 使用 SQL-like 語法查詢日誌
-- **即時監控**: 實時查看應用程式日誌
-- **多語言支援**: 支援多種程式語言
-- **日誌等級**: 支援 Verbose, Debug, Information, Warning, Error, Fatal
-- **過濾和搜尋**: 可以根據任何欄位進行過濾
-- **時間範圍**: 可以選擇特定時間範圍的日誌
-- **儀表板**: 可以創建自定義儀表板監控關鍵指標
 
 ## 技術棧
 
-- **Seq**: Latest (Docker)
-- **Go**: 使用標準庫 HTTP client 直接發送到 Seq API
-- **Node.js**: 使用 `winston` + `winston-seq`
-- **.NET**: 使用 `Serilog` + `Serilog.Sinks.Seq`
+- **.NET 10.0** / C# 10.0
+- **Serilog** — 結構化日誌 + OpenTelemetry Sink
+- **OpenTelemetry** — 分散式追蹤 (OTLP/gRPC)
+- **OpenTelemetry Collector** — 遙測資料路由與轉發
+- **Seq** — 結構化日誌平台
+- **Grafana** + **Tempo** + **Loki** + **Prometheus** — 可觀測性全家桶
+- **Elasticsearch** + **Kibana** — 日誌搜尋與分析
 
 ## 停止服務
 
-停止 Seq 服務：
 ```bash
+# 停止可觀測性基礎設施
 docker-compose down
-```
 
-停止所有應用程式：按 `Ctrl+C`
-
-## 清除數據
-
-如果需要清除 Seq 中的所有數據：
-
-```bash
+# 清除所有資料（含 volumes）
 docker-compose down -v
 ```
+
+停止 .NET 應用程式：按 `Ctrl+C`
 
 ## 注意事項
 
 - 此為 Demo 環境，未設置身份驗證
-- 生產環境請務必啟用 Seq 的身份驗證功能
-- 預設 Seq 數據儲存在 Docker volume 中
+- 生產環境請務必啟用各服務的身份驗證功能
 - 所有應用程式每 2 秒發送一次日誌
 - 事件和數據都是隨機生成的模擬數據
-
-## 疑難排解
-
-### Seq 無法啟動
-確保 Docker 正在運行，且端口 5341 未被佔用。
-
-### 應用程式無法連接到 Seq
-確保 Seq 已經完全啟動（等待約 10 秒），然後再啟動應用程式。
-
-### Go 模組錯誤
-```bash
-cd golang-demo
-go mod tidy
-```
-
-### Node.js 依賴錯誤
-```bash
-cd nodejs-demo
-rm -rf node_modules package-lock.json
-npm install
-```
