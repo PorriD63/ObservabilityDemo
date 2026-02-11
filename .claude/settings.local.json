@@ -14,7 +14,8 @@
       "Bash(npm install)",
       "Bash(timeout 3 node:*)",
       "Bash(go mod download:*)",
-      "Bash(timeout 3 go run:*)"
+      "Bash(timeout 3 go run:*)",
+      "Bash(chmod:*)"
     ]
   }
 }

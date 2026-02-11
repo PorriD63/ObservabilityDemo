@@ -5,10 +5,21 @@ PIDS=()
 
 cleanup() {
     echo ""
-    echo "Stopping services..."
+    echo "Stopping .NET services..."
     for pid in "${PIDS[@]}"; do
         kill "$pid" 2>/dev/null
     done
+    # Wait for dotnet processes to shut down gracefully
+    sleep 3
+    # Force kill any remaining
+    for pid in "${PIDS[@]}"; do
+        kill -9 "$pid" 2>/dev/null
+    done
+    for pid in "${PIDS[@]}"; do
+        wait "$pid" 2>/dev/null
+    done
+    echo ".NET services stopped."
+    echo ""
     echo "Stopping Docker Compose..."
     docker compose down -v
     echo "Done!"
@@ -33,25 +44,25 @@ echo "  Kafka UI: http://localhost:8080"
 echo ""
 
 echo "[2/6] Starting FinanceService (port 5300)..."
-(cd "$SCRIPT_DIR/src/ObservabilityDemo.FinanceService" && dotnet run) &
+dotnet run --project "$SCRIPT_DIR/src/ObservabilityDemo.FinanceService" &
 PIDS+=($!)
 sleep 3
 echo ""
 
 echo "[3/6] Starting PlayerGameService (port 5200)..."
-(cd "$SCRIPT_DIR/src/ObservabilityDemo.PlayerGameService" && dotnet run) &
+dotnet run --project "$SCRIPT_DIR/src/ObservabilityDemo.PlayerGameService" &
 PIDS+=($!)
 sleep 3
 echo ""
 
 echo "[4/6] Starting GatewayService (port 5100)..."
-(cd "$SCRIPT_DIR/src/ObservabilityDemo.GatewayService" && dotnet run) &
+dotnet run --project "$SCRIPT_DIR/src/ObservabilityDemo.GatewayService" &
 PIDS+=($!)
 sleep 2
 echo ""
 
 echo "[5/6] Starting NotificationService (Kafka consumer)..."
-(cd "$SCRIPT_DIR/src/ObservabilityDemo.NotificationService" && dotnet run) &
+dotnet run --project "$SCRIPT_DIR/src/ObservabilityDemo.NotificationService" &
 PIDS+=($!)
 echo ""
 
@@ -67,11 +78,11 @@ echo "  Grafana:   http://localhost:3000"
 echo "  Kafka UI:  http://localhost:8080"
 echo ""
 
-if command -v xdg-open > /dev/null; then
-    xdg-open http://localhost:5341
-elif command -v open > /dev/null; then
-    open http://localhost:5341
-fi
+# if command -v xdg-open > /dev/null; then
+#     xdg-open http://localhost:5341
+# elif command -v open > /dev/null; then
+#     open http://localhost:5341
+# fi
 
 echo "Press Ctrl+C to stop all services..."
 wait
