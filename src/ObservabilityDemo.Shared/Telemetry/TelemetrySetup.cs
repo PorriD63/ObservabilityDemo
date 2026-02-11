@@ -33,13 +33,14 @@ public static class TelemetrySetup
                 {
                     ["deployment.environment"] = "Demo"
                 }))
+            .SetSampler(new AlwaysOnSampler())
             .AddSource(serviceName);
 
         if (options.AddAspNetCoreInstrumentation)
             builder.AddAspNetCoreInstrumentation();
 
         if (options.AddGrpcClientInstrumentation)
-            builder.AddGrpcClientInstrumentation();
+            builder.AddGrpcClientInstrumentation(o => o.SuppressDownstreamInstrumentation = true);
 
         builder.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
 

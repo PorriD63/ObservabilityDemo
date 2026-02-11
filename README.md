@@ -29,8 +29,9 @@ GatewayService ──gRPC──▶ PlayerGameService ──gRPC──▶ Finance
 ### TraceId 端對端傳播
 
 同一個 Workflow 的所有操作（跨 4 個 process、跨 gRPC + Kafka）共用同一個 TraceId：
-- **gRPC**: OTel Instrumentation 自動傳播 W3C traceparent（零配置）
-- **Kafka**: 手動注入/提取 traceparent 到 message headers，用 `parentContext` 接續同一 Trace
+- **gRPC Client 端**: OTel `AddGrpcClientInstrumentation` 自動傳播 W3C `traceparent`，並設定 `SuppressDownstreamInstrumentation = true` 確保傳播的是 gRPC CLIENT span ID（而非內部 HttpClient Activity 的 ID）
+- **gRPC Server 端**: 使用 `GrpcTraceContext.StartGrpcServerActivity()` 從 `ServerCallContext` 解析 `traceparent`，繞過多 TracerProvider 架構下未匯出的 ASP.NET Core 中間 Activity，直接 parent 到遠端 CLIENT span
+- **Kafka**: 手動注入/提取 `traceparent` 到 message headers，用 `parentContext` 接續同一 Trace
 
 ## 專案結構
 
@@ -41,7 +42,7 @@ ObservabilityDemo/
 │   ├── player_game.proto
 │   └── finance.proto
 ├── src/
-│   ├── ObservabilityDemo.Shared/                # 共享：OTel 設定、Kafka 工具、Event DTOs、常數
+│   ├── ObservabilityDemo.Shared/                # 共享：OTel 設定、gRPC Trace 傳播、Kafka 工具、Event DTOs、常數
 │   ├── ObservabilityDemo.GatewayService/        # Port 5100, BackgroundService + gRPC client
 │   ├── ObservabilityDemo.PlayerGameService/     # Port 5200, gRPC server
 │   ├── ObservabilityDemo.FinanceService/        # Port 5300, gRPC server + Kafka producer
@@ -285,7 +286,7 @@ group by WorkflowName
 - **gRPC** (Grpc.AspNetCore / Grpc.Net.Client) — 同步服務間通訊
 - **Kafka** (Confluent.Kafka, KRaft mode) — 非同步事件驅動
 - **Serilog** — 結構化日誌 + OpenTelemetry Sink
-- **OpenTelemetry** — 分散式追蹤 (OTLP/gRPC) + gRPC/AspNetCore Instrumentation
+- **OpenTelemetry** — 分散式追蹤 (OTLP/gRPC) + gRPC Client Instrumentation + 自訂 gRPC Server Trace 傳播
 - **OpenTelemetry Collector** — 遙測資料路由與轉發
 - **Seq** — 結構化日誌平台
 - **Grafana** + **Tempo** + **Loki** + **Prometheus** — 可觀測性全家桶

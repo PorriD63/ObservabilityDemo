@@ -4,6 +4,7 @@ using Serilog;
 using Serilog.Context;
 using ObservabilityDemo.Shared.Constants;
 using ObservabilityDemo.Shared.Protos;
+using ObservabilityDemo.Shared.Telemetry;
 
 namespace ObservabilityDemo.PlayerGameService.Services;
 
@@ -30,7 +31,7 @@ public class GameGrpcService : GameService.GameServiceBase
     /// </summary>
     public override async Task<StartGameResponse> StartGame(StartGameRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("StartGame", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("StartGame", context);
         activity?.SetTag("rpc.method", "StartGame");
         activity?.SetTag("rpc.service", "GameService");
         activity?.SetTag("rpc.system", "grpc");
@@ -106,7 +107,7 @@ public class GameGrpcService : GameService.GameServiceBase
     /// </summary>
     public override async Task<PlaceBetResponse> PlaceBet(PlaceBetRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("PlaceBet", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("PlaceBet", context);
         activity?.SetTag("rpc.method", "PlaceBet");
         activity?.SetTag("rpc.service", "GameService");
         activity?.SetTag("rpc.system", "grpc");
@@ -224,7 +225,7 @@ public class GameGrpcService : GameService.GameServiceBase
     /// </summary>
     public override async Task<GetGameResultResponse> GetGameResult(GetGameResultRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("GetGameResult", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("GetGameResult", context);
         activity?.SetTag("rpc.method", "GetGameResult");
         activity?.SetTag("rpc.service", "GameService");
         activity?.SetTag("rpc.system", "grpc");

@@ -4,6 +4,7 @@ using Serilog;
 using Serilog.Context;
 using ObservabilityDemo.Shared.Constants;
 using ObservabilityDemo.Shared.Protos;
+using ObservabilityDemo.Shared.Telemetry;
 
 namespace ObservabilityDemo.PlayerGameService.Services;
 
@@ -27,7 +28,7 @@ public class PlayerGrpcService : PlayerService.PlayerServiceBase
     /// </summary>
     public override async Task<LoginResponse> Login(LoginRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("Login", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("Login", context);
         activity?.SetTag("rpc.method", "Login");
         activity?.SetTag("rpc.service", "PlayerService");
         activity?.SetTag("rpc.system", "grpc");
@@ -77,7 +78,7 @@ public class PlayerGrpcService : PlayerService.PlayerServiceBase
     /// </summary>
     public override async Task<AuthenticateResponse> Authenticate(AuthenticateRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("Authenticate", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("Authenticate", context);
         activity?.SetTag("rpc.method", "Authenticate");
         activity?.SetTag("rpc.service", "PlayerService");
         activity?.SetTag("rpc.system", "grpc");

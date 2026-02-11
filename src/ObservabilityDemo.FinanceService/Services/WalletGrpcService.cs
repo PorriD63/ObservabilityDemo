@@ -4,6 +4,7 @@ using Serilog;
 using Serilog.Context;
 using ObservabilityDemo.Shared.Constants;
 using ObservabilityDemo.Shared.Events;
+using ObservabilityDemo.Shared.Telemetry;
 using ObservabilityDemo.Shared.Kafka;
 using ObservabilityDemo.Shared.Protos;
 
@@ -31,7 +32,7 @@ public class WalletGrpcService : WalletService.WalletServiceBase
     /// </summary>
     public override async Task<GetBalanceResponse> GetBalance(GetBalanceRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("GetBalance", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("GetBalance", context);
         activity?.SetTag("rpc.method", "GetBalance");
         activity?.SetTag("rpc.service", "WalletService");
         activity?.SetTag("rpc.system", "grpc");
@@ -84,7 +85,7 @@ public class WalletGrpcService : WalletService.WalletServiceBase
     /// </summary>
     public override async Task<SettlementResponse> Settlement(SettlementRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("Settlement", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("Settlement", context);
         activity?.SetTag("rpc.method", "Settlement");
         activity?.SetTag("rpc.service", "WalletService");
         activity?.SetTag("rpc.system", "grpc");
@@ -160,7 +161,7 @@ public class WalletGrpcService : WalletService.WalletServiceBase
     /// </summary>
     public override async Task<UpdateBalanceResponse> UpdateBalance(UpdateBalanceRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("UpdateBalance", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("UpdateBalance", context);
         activity?.SetTag("rpc.method", "UpdateBalance");
         activity?.SetTag("rpc.service", "WalletService");
         activity?.SetTag("rpc.system", "grpc");
@@ -225,7 +226,7 @@ public class WalletGrpcService : WalletService.WalletServiceBase
     /// </summary>
     public override async Task<InitiateDepositResponse> InitiateDeposit(InitiateDepositRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("InitiateDeposit", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("InitiateDeposit", context);
         activity?.SetTag("rpc.method", "InitiateDeposit");
         activity?.SetTag("rpc.service", "WalletService");
         activity?.SetTag("rpc.system", "grpc");
@@ -285,7 +286,7 @@ public class WalletGrpcService : WalletService.WalletServiceBase
     /// </summary>
     public override async Task<CreditBalanceResponse> CreditBalance(CreditBalanceRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("CreditBalance", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("CreditBalance", context);
         activity?.SetTag("rpc.method", "CreditBalance");
         activity?.SetTag("rpc.service", "WalletService");
         activity?.SetTag("rpc.system", "grpc");
@@ -325,7 +326,7 @@ public class WalletGrpcService : WalletService.WalletServiceBase
     /// </summary>
     public override async Task<RequestWithdrawalResponse> RequestWithdrawal(RequestWithdrawalRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("RequestWithdrawal", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("RequestWithdrawal", context);
         activity?.SetTag("rpc.method", "RequestWithdrawal");
         activity?.SetTag("rpc.service", "WalletService");
         activity?.SetTag("rpc.system", "grpc");

@@ -4,6 +4,7 @@ using Serilog;
 using Serilog.Context;
 using ObservabilityDemo.Shared.Constants;
 using ObservabilityDemo.Shared.Events;
+using ObservabilityDemo.Shared.Telemetry;
 using ObservabilityDemo.Shared.Kafka;
 using ObservabilityDemo.Shared.Protos;
 
@@ -34,7 +35,7 @@ public class RiskGrpcService : RiskService.RiskServiceBase
     /// </summary>
     public override async Task<AssessRiskResponse> AssessRisk(AssessRiskRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("AssessRisk", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("AssessRisk", context);
         activity?.SetTag("rpc.method", "AssessRisk");
         activity?.SetTag("rpc.service", "RiskService");
         activity?.SetTag("rpc.system", "grpc");

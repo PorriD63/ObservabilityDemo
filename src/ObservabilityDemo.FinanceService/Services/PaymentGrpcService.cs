@@ -4,6 +4,7 @@ using Serilog;
 using Serilog.Context;
 using ObservabilityDemo.Shared.Constants;
 using ObservabilityDemo.Shared.Events;
+using ObservabilityDemo.Shared.Telemetry;
 using ObservabilityDemo.Shared.Kafka;
 using ObservabilityDemo.Shared.Protos;
 
@@ -32,7 +33,7 @@ public class PaymentGrpcService : PaymentService.PaymentServiceBase
     /// </summary>
     public override async Task<ValidatePaymentResponse> ValidatePayment(ValidatePaymentRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("ValidatePayment", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("ValidatePayment", context);
         activity?.SetTag("rpc.method", "ValidatePayment");
         activity?.SetTag("rpc.service", "PaymentService");
         activity?.SetTag("rpc.system", "grpc");
@@ -88,7 +89,7 @@ public class PaymentGrpcService : PaymentService.PaymentServiceBase
     /// </summary>
     public override async Task<ProcessPaymentResponse> ProcessPayment(ProcessPaymentRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("ProcessPayment", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("ProcessPayment", context);
         activity?.SetTag("rpc.method", "ProcessPayment");
         activity?.SetTag("rpc.service", "PaymentService");
         activity?.SetTag("rpc.system", "grpc");
@@ -185,7 +186,7 @@ public class PaymentGrpcService : PaymentService.PaymentServiceBase
     /// </summary>
     public override async Task<ApproveWithdrawalResponse> ApproveWithdrawal(ApproveWithdrawalRequest request, ServerCallContext context)
     {
-        using var activity = _activitySource.StartActivity("ApproveWithdrawal", ActivityKind.Server);
+        using var activity = _activitySource.StartGrpcServerActivity("ApproveWithdrawal", context);
         activity?.SetTag("rpc.method", "ApproveWithdrawal");
         activity?.SetTag("rpc.service", "PaymentService");
         activity?.SetTag("rpc.system", "grpc");
