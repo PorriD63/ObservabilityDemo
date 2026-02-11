@@ -29,6 +29,10 @@
         "SeverityText": {
           "type": "keyword"
         },
+        "level": {
+          "type": "alias",
+          "path": "SeverityText"
+        },
         "SeverityNumber": {
           "type": "integer"
         },

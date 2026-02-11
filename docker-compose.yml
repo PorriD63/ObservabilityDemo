@@ -1,7 +1,7 @@
 services:
   # ==================== OpenTelemetry Collector ====================
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.118.0
+    image: otel/opentelemetry-collector-contrib:0.145.0
     container_name: otel-collector
     ports:
       - "4317:4317"   # OTLP gRPC
@@ -24,7 +24,7 @@ services:
 
   # ==================== Seq ====================
   seq:
-    image: datalust/seq:2025
+    image: datalust/seq:2025.2
     container_name: seq-demo
     ports:
       - "5341:80"
@@ -39,7 +39,7 @@ services:
 
   # ==================== ELK Stack ====================
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.11
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
@@ -62,7 +62,7 @@ services:
 
   # Elasticsearch index template initialization
   elasticsearch-init:
-    image: curlimages/curl:8.5.0
+    image: curlimages/curl:8.18.0
     container_name: elasticsearch-init
     depends_on:
       elasticsearch:
@@ -74,7 +74,7 @@ services:
       - observability
 
   kibana:
-    image: docker.elastic.co/kibana/kibana:8.17.0
+    image: docker.elastic.co/kibana/kibana:8.19.11
     container_name: kibana
     ports:
       - "5601:5601"
@@ -90,7 +90,7 @@ services:
 
   # ==================== Grafana Stack ====================
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:12.3.2
     container_name: grafana
     ports:
       - "3000:3000"
@@ -100,6 +100,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
+
     volumes:
       - grafana-data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -113,7 +114,7 @@ services:
 
   # ==================== Loki (Log Aggregation) ====================
   loki:
-    image: grafana/loki:3.3.2
+    image: grafana/loki:3.6.5
     container_name: loki
     ports:
       - "3100:3100"
@@ -127,7 +128,7 @@ services:
 
   # ==================== Tempo (Distributed Tracing) ====================
   tempo:
-    image: grafana/tempo:2.6.1
+    image: grafana/tempo:2.10.0
     container_name: tempo
     ports:
       - "3200:3200"   # tempo query
@@ -143,7 +144,7 @@ services:
 
   # ==================== Kafka (KRaft mode) ====================
   kafka:
-    image: confluentinc/cp-kafka:7.8.0
+    image: confluentinc/cp-kafka:7.9.5
     container_name: kafka
     ports:
       - "9092:9092"
@@ -152,7 +153,7 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093
+      KAFKA_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka:29093
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -185,7 +186,7 @@ services:
 
   # ==================== Prometheus (Metrics) ====================
   prometheus:
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.5.1
     container_name: prometheus
     ports:
       - "9090:9090"

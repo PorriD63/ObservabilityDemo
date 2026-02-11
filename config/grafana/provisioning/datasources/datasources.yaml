@@ -17,6 +17,12 @@ datasources:
     editable: true
     jsonData:
       maxLines: 1000
+      derivedFields:
+        - name: Trace ID
+          matcherRegex: "trace_id"
+          matcherType: label
+          datasourceUid: tempo
+          url: "$${__value.raw}"
 
   - name: Tempo
     uid: tempo
@@ -27,13 +33,11 @@ datasources:
     jsonData:
       httpMethod: GET
       tracesToLogs:
-        datasourceUid: loki
-        tags: ["job", "instance", "pod", "namespace"]
-        mappedTags: [{ key: "service.name", value: "service" }]
-        mapTagNamesEnabled: false
-        spanStartTimeShift: "1h"
-        spanEndTimeShift: "-1h"
-        filterByTraceID: false
+        datasourceUid: elasticsearch
+        tags: [{ key: "service.name", value: "Resource.service\\.name" }]
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
         filterBySpanID: false
       tracesToMetrics:
         datasourceUid: prometheus
@@ -48,6 +52,7 @@ datasources:
         datasourceUid: loki
 
   - name: Elasticsearch
+    uid: elasticsearch
     type: elasticsearch
     access: proxy
     url: http://elasticsearch:9200
@@ -57,3 +62,13 @@ datasources:
       timeField: "@timestamp"
       logMessageField: "Body"
       logLevelField: "SeverityText"
+    correlations:
+      - targetUID: tempo
+        label: "View Trace in Tempo"
+        description: "Open trace by TraceId"
+        type: query
+        config:
+          field: TraceId
+          target:
+            query: "$${__value.raw}"
+            queryType: traceql

@@ -48,6 +48,8 @@ exporters:
     endpoints:
       - http://elasticsearch:9200
     logs_index: dotnet-logs
+    mapping:
+      mode: none
     sending_queue:
       enabled: true
       num_consumers: 20

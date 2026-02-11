@@ -10,7 +10,7 @@ cleanup() {
         kill "$pid" 2>/dev/null
     done
     echo "Stopping Docker Compose..."
-    docker compose down
+    docker compose down -v
     echo "Done!"
     exit 0
 }
@@ -62,9 +62,9 @@ echo "  PlayerGameService:    port 5200 (gRPC server)"
 echo "  GatewayService:       port 5100 (gRPC client / workflow orchestrator)"
 echo "  NotificationService:  Kafka consumer"
 echo ""
-echo "  Seq:      http://localhost:5341"
-echo "  Grafana:  http://localhost:3000"
-echo "  Kafka UI: http://localhost:8080"
+echo "  Seq:       http://localhost:5341"
+echo "  Grafana:   http://localhost:3000"
+echo "  Kafka UI:  http://localhost:8080"
 echo ""
 
 if command -v xdg-open > /dev/null; then

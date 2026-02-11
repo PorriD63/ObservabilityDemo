@@ -9,9 +9,9 @@ docker compose up -d
 echo Waiting for infrastructure to be ready...
 timeout /t 30 /nobreak > nul
 echo Infrastructure is running.
-echo   Seq:      http://localhost:5341
-echo   Grafana:  http://localhost:3000
-echo   Kafka UI: http://localhost:8080
+echo   Seq:       http://localhost:5341
+echo   Grafana:   http://localhost:3000
+echo   Kafka UI:  http://localhost:8080
 echo.
 
 echo [2/6] Starting FinanceService (port 5300)...
@@ -40,9 +40,9 @@ echo   PlayerGameService:    port 5200 (gRPC server)
 echo   GatewayService:       port 5100 (gRPC client / workflow orchestrator)
 echo   NotificationService:  Kafka consumer
 echo.
-echo   Seq:      http://localhost:5341
-echo   Grafana:  http://localhost:3000
-echo   Kafka UI: http://localhost:8080
+echo   Seq:       http://localhost:5341
+echo   Grafana:   http://localhost:3000
+echo   Kafka UI:  http://localhost:8080
 echo.
 echo Press any key to stop all services...
 pause > nul
@@ -54,5 +54,5 @@ taskkill /FI "WINDOWTITLE eq PlayerGameService" /T /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq GatewayService" /T /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq NotificationService" /T /F >nul 2>&1
 echo Stopping Docker Compose...
-docker compose down
+docker compose down -v
 echo Done!
